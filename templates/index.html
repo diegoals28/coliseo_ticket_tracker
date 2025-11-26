@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coliseo Ticket Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Heroicons via inline SVG -->
+    <style>
+        :root {
+            --bg-primary: #f5f5f7;
+            --bg-card: #ffffff;
+            --border-color: #e5e5e7;
+            --text-primary: #1d1d1f;
+            --text-secondary: #6e6e73;
+            --text-muted: #86868b;
+            --accent-primary: #0071e3;
+            --accent-primary-hover: #0077ed;
+            --accent-success: #34c759;
+            --accent-warning: #ff9500;
+            --accent-error: #ff3b30;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+            padding: 20px 0;
+            margin-bottom: 32px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .header-badge {
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .form-hint {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 140px;
+            padding: 14px 16px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.8125rem;
+            color: var(--text-primary);
+            resize: vertical;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+        }
+
+        textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* Tour Selection */
+        .tours-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .tour-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-primary);
+            border: 2px solid transparent;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tour-option:hover {
+            background: #eef1f5;
+        }
+
+        .tour-option.selected {
+            border-color: var(--accent-primary);
+            background: rgba(0, 113, 227, 0.05);
+        }
+
+        .tour-option input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: var(--accent-primary);
+            cursor: pointer;
+        }
+
+        .tour-option label {
+            font-size: 0.9375rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            cursor: pointer;
+            flex: 1;
+        }
+
+        /* Buttons */
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 20px;
+            font-family: inherit;
+            font-size: 0.9375rem;
+            font-weight: 500;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent-primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-primary-hover);
+        }
+
+        .btn-secondary {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: #eaeaec;
+        }
+
+        .btn-success {
+            background: var(--accent-success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #2db84e;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-icon {
+            font-size: 1rem;
+        }
+
+        /* Icon styles */
+        .icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        .icon-sm {
+            width: 16px;
+            height: 16px;
+        }
+
+        .icon-lg {
+            width: 24px;
+            height: 24px;
+        }
+
+        /* Alerts */
+        .alert {
+            padding: 14px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .alert.active {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .alert-error {
+            background: #fff2f2;
+            color: #c41e1e;
+            border: 1px solid #fecaca;
+        }
+
+        .alert-success {
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            margin: 0 auto 16px;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: var(--text-secondary);
+            font-size: 0.9375rem;
+        }
+
+        /* Results Section */
+        .results {
+            display: none;
+        }
+
+        .results.active {
+            display: block;
+        }
+
+        /* Summary Cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .summary-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 20px;
+        }
+
+        .summary-card-label {
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .summary-card-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        /* Tour Results */
+        .tour-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+
+        .tour-section-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tour-section-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .tour-section-stats {
+            display: flex;
+            gap: 24px;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .tour-section-stats strong {
+            color: var(--text-primary);
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            padding: 8px 24px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            background: transparent;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-primary);
+            background: rgba(0,0,0,0.04);
+        }
+
+        .tab-btn.active {
+            color: var(--text-primary);
+            background: var(--bg-card);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .tab-btn .icon {
+            width: 18px;
+            height: 18px;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 0;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Table */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        table th {
+            text-align: left;
+            padding: 14px 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        table td {
+            padding: 16px 20px;
+            font-size: 0.9375rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        table tbody tr {
+            transition: background 0.15s;
+        }
+
+        table tbody tr:hover {
+            background: var(--bg-primary);
+        }
+
+        .expandable-row {
+            cursor: pointer;
+        }
+
+        .expand-hint {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            font-size: 0.8125rem;
+        }
+
+        .expand-hint .icon-sm {
+            transition: transform 0.2s;
+        }
+
+        .expandable-row:hover .expand-hint .icon-sm {
+            transform: translateY(2px);
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 20px;
+        }
+
+        .badge-alta {
+            background: #d1f2eb;
+            color: #0a5c4e;
+        }
+
+        .badge-media {
+            background: #fef3cd;
+            color: #8a6d14;
+        }
+
+        .badge-baja {
+            background: #fce8e8;
+            color: #a22020;
+        }
+
+        .badge-agotado {
+            background: #495057;
+            color: white;
+        }
+
+        /* Timeslots */
+        .timeslots-detail {
+            display: none;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .timeslots-detail.active {
+            display: block;
+        }
+
+        .timeslots-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 16px 20px;
+        }
+
+        .timeslot-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 8px 12px;
+            text-align: center;
+            transition: all 0.2s;
+            flex: 0 0 auto;
+        }
+
+        .timeslot-card:hover {
+            box-shadow: var(--shadow-sm);
+            transform: translateY(-1px);
+        }
+
+        .timeslot-card.disponible {
+            border-color: var(--accent-success);
+            background: #f0fdf4;
+        }
+
+        .timeslot-card.parcial {
+            border-color: var(--accent-warning);
+            background: #fffbeb;
+        }
+
+        .timeslot-card.agotado {
+            border-color: var(--accent-error);
+            background: #fef2f2;
+        }
+
+        .timeslot-hora {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+
+        .timeslot-plazas {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            padding: 24px;
+        }
+
+        .stats-card {
+            background: var(--bg-primary);
+            border-radius: var(--radius-md);
+            padding: 20px;
+        }
+
+        .stats-card h4 {
+            font-size: 0.9375rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stats-card h4 .icon {
+            color: var(--accent-primary);
+        }
+
+        .stats-card-hint {
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+        }
+
+        .stats-label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .stats-value {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: var(--border-color);
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 6px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent-primary);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .stats-detail {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        /* Timestamp */
+        .timestamp {
+            text-align: center;
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+            padding: 20px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 16px;
+            }
+
+            .header-content {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .btn-group {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .tour-section-stats {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .tabs {
+                overflow-x: auto;
+                padding: 8px 16px;
+            }
+
+            .timeslots-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            table th, table td {
+                padding: 12px 14px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .timeslots-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="header-title">
+                <h1>Coliseo Ticket Tracker</h1>
+                <span class="header-badge">Monitor de disponibilidad</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Configuracion de Consulta</h2>
+            </div>
+
+            <div class="alert alert-error" id="errorAlert"></div>
+            <div class="alert alert-success" id="successAlert"></div>
+
+            <div class="form-group">
+                <label class="form-label">Cookies</label>
+                <p class="form-hint">Formato JSON o tabla copiada desde Chrome DevTools</p>
+                <textarea id="cookiesInput" placeholder='Pega aqui las cookies en cualquier formato:
+
+Formato JSON:
+[{"name": "cookie_name", "value": "cookie_value", "domain": ".colosseo.it"}]
+
+O formato tabla de Chrome DevTools:
+Name    Value    Domain    Path...'></textarea>
+                <div class="btn-group" style="margin-top: 12px;">
+                    <button class="btn btn-secondary" onclick="cargarCookiesArchivo()">
+                        <svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
+                        </svg>
+                        Cargar desde archivo
+                    </button>
+                    <button class="btn btn-secondary" onclick="convertirCookiesTabla()">
+                        <svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        </svg>
+                        Auto-convertir
+                    </button>
+                    <button class="btn btn-success" onclick="guardarCookies()">
+                        <svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        Guardar
+                    </button>
+                </div>
+            </div>
+
+
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="consultarDisponibilidad()">
+                    <svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                    </svg>
+                    Consultar Disponibilidad
+                </button>
+                <button class="btn btn-success" id="exportBtn" onclick="exportarExcel()" disabled>
+                    <svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                    </svg>
+                    Descargar Excel
+                </button>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p class="loading-text">Consultando disponibilidad...</p>
+        </div>
+
+        <div class="results" id="results">
+            <div class="summary-grid" id="summaryCards"></div>
+            <div id="tourResults"></div>
+            <p class="timestamp" id="timestamp"></p>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

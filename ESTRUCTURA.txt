@@ -1,0 +1,120 @@
+════════════════════════════════════════════════════════════════════════
+🏛️  COLOSSEO MONITOR - ESTRUCTURA DE ARCHIVOS
+════════════════════════════════════════════════════════════════════════
+
+📁 ARCHIVOS INCLUIDOS EN ESTA CARPETA (colosseo_app/)
+════════════════════════════════════════════════════════════════════════
+
+✅ SCRIPTS DE USO DIRECTO
+─────────────────────────────────────────────────────────────────────────
+  consultar_multiples_tours.py   (8.8 KB)  ⭐ PRINCIPAL - Compara tours
+  colosseo_monitor.py             (8.9 KB)  Monitor completo con navegador
+
+✅ MÓDULOS CORE (No ejecutar directamente)
+─────────────────────────────────────────────────────────────────────────
+  api_client.py                   (21 KB)   Cliente API y parser
+  stealth_browser.py              (13 KB)   Navegador anti-detección
+  report_generator.py             (17 KB)   Generador de informes
+  colosseo_config.py              (4.3 KB)  Configuración del sistema
+
+✅ ARCHIVOS DE DATOS Y HERRAMIENTAS
+─────────────────────────────────────────────────────────────────────────
+  cookies_colosseo.json           (1.9 KB)  🔑 Cookies activas (REQUERIDO)
+  chromedriver.exe                (19 MB)   Driver de Chrome
+  requirements.txt                (129 B)   Dependencias Python
+
+✅ DOCUMENTACIÓN
+─────────────────────────────────────────────────────────────────────────
+  README.md                       (3.6 KB)  Guía completa de uso
+  ESTRUCTURA.txt                  (este archivo)
+
+
+════════════════════════════════════════════════════════════════════════
+🚀 INICIO RÁPIDO
+════════════════════════════════════════════════════════════════════════
+
+1. Instalar dependencias:
+   pip install -r requirements.txt
+
+2. Ejecutar el comparador de tours:
+   python consultar_multiples_tours.py
+
+3. Ver resultados en pantalla
+
+
+════════════════════════════════════════════════════════════════════════
+🗑️ ARCHIVOS EXCLUIDOS (quedaron en carpeta padre)
+════════════════════════════════════════════════════════════════════════
+
+SCRIPTS DE PRUEBA/DEBUG (no necesarios para producción):
+  • debug_arena_raw.py
+  • test_arena_noviembre.py
+  • test_api_raw.py
+  • test_api_raw_response.json
+  • resumen_rapido.py
+  • consultar_multiples_meses.py
+  • diagnosticar_api.py
+  • analizar_campos_api.py
+  • ver_fechas_disponibles.py
+  • verificar_cookies.py
+
+SCRIPTS DE EXTRACCIÓN DE COOKIES ALTERNATIVOS:
+  • extraer_cookies_auto.py
+  • extraer_cookies_directo.py
+  • extraer_cookies_manual.py
+  • extraer_cookies_manual_simple.py
+  • extraer_cookies_stealth.py
+  • extraer_guid.py
+
+ARCHIVOS DE PLANTILLA/DOCUMENTACIÓN ANTIGUA:
+  • cookies_plantilla.json
+  • cookies_plantilla_completa.json
+  • cookies_colosseo_temp.json
+  • CREAR_COOKIES_MANUAL.md
+  • GUIA_COOKIES_MANUAL.md
+  • GUIA_MEJORAS.md
+  • GUIA_USO.md
+  • INICIO_RAPIDO.md
+  • INSTRUCCIONES_COOKIES.txt
+  • RESUMEN_MEJORAS.md
+  • COLOSSEO_MONITOR_README.md
+  • CAPTURAR_REQUEST_API.txt
+
+MÓDULOS/SCRIPTS OBSOLETOS O REDUNDANTES:
+  • browser.py
+  • calendar_client.py
+  • calendar_requests.py
+  • config.py
+  • ejemplo_uso.py
+  • human_behavior.py
+  • main.py
+  • monitor.py
+  • notifier.py
+  • parser.py
+  • runner.py
+  • storage.py
+  • extract_experience_ids.py
+
+ARCHIVOS DE DATOS TEMPORALES:
+  • colosseo_gruppi_log.json
+  • muestra_api_response.json
+  • colosseo_report_20251124_123735.txt
+  • test_informe.txt
+
+OTROS:
+  • proxies.txt
+  • create_supabase_table.sql
+  • __pycache__/ (archivos compilados)
+
+
+════════════════════════════════════════════════════════════════════════
+💡 CONSEJOS
+════════════════════════════════════════════════════════════════════════
+
+• Esta carpeta (colosseo_app/) es AUTÓNOMA y FUNCIONAL
+• Puedes copiarla a otro lugar y funcionará independientemente
+• Los archivos excluidos son solo para desarrollo/pruebas
+• Si necesitas renovar cookies, usa: python colosseo_monitor.py
+
+
+════════════════════════════════════════════════════════════════════════

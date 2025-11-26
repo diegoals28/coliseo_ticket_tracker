@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Colosseo Monitor - Consulta de Disponibilidad</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #555;
+        }
+
+        .form-group textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .tours-selection {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .tour-checkbox {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tour-checkbox:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .tour-checkbox input[type="checkbox"] {
+            margin-right: 10px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .tour-checkbox label {
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.active {
+            display: block;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .results {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .results.active {
+            display: block;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .summary-card h3 {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+
+        .summary-card .value {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .tour-results {
+            margin-bottom: 30px;
+        }
+
+        .tour-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-radius: 8px 8px 0 0;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .tour-header h3 {
+            color: #333;
+            font-size: 1.3em;
+        }
+
+        .tour-stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #555;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        table td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .badge-alta {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-media {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-baja {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .badge-agotado {
+            background: #343a40;
+            color: white;
+        }
+
+        .timestamp {
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+
+        .expandable-row {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .expandable-row:hover {
+            background: #e8f4f8 !important;
+        }
+
+        .timeslots-detail {
+            display: none;
+            background: #f8f9fa;
+            padding: 15px;
+        }
+
+        .timeslots-detail.active {
+            display: block;
+        }
+
+        .timeslots-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            padding: 10px 0;
+        }
+
+        .timeslot-card {
+            background: white;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            padding: 8px;
+            text-align: center;
+            font-size: 0.85em;
+        }
+
+        .timeslot-card.disponible {
+            border-color: #28a745;
+        }
+
+        .timeslot-card.parcial {
+            border-color: #ffc107;
+        }
+
+        .timeslot-card.agotado {
+            border-color: #dc3545;
+            background: #f8d7da;
+        }
+
+        .timeslot-hora {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .timeslot-plazas {
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        .tab-container {
+            display: flex;
+            border-bottom: 2px solid #dee2e6;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+
+        .tab-button {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .tab-button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-button:hover {
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .stats-card {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .stats-card h4 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .stats-row:last-child {
+            border-bottom: none;
+        }
+
+        .stats-label {
+            font-weight: 500;
+        }
+
+        .stats-value {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏛️ Colosseo Monitor</h1>
+            <p>Sistema de consulta de disponibilidad de entradas</p>
+        </div>
+
+        <div class="main-card">
+            <h2 class="section-title">📋 Configuración de Consulta</h2>
+
+            <div class="alert alert-error" id="errorAlert"></div>
+            <div class="alert alert-success" id="successAlert"></div>
+
+            <div class="form-group">
+                <label>🍪 Cookies:</label>
+                <div style="margin-bottom: 10px;">
+                    <small style="color: #666;">
+                        Acepta formato JSON o tabla de Chrome DevTools (Name, Value, Domain...)
+                    </small>
+                </div>
+                <textarea id="cookiesInput" placeholder='Pega aquí las cookies en cualquier formato:
+
+Formato JSON:
+[{"name": "cookie_name", "value": "cookie_value", "domain": ".colosseo.it"}]
+
+O formato tabla de Chrome:
+Name    Value    Domain    Path...
+octofence-waap-id    7ff9dc5cc978    ticketing.colosseo.it    /...'></textarea>
+                <div class="button-group" style="margin-top: 10px;">
+                    <button class="btn btn-secondary" onclick="cargarCookiesArchivo()">
+                        📂 Cargar desde archivo
+                    </button>
+                    <button class="btn btn-secondary" onclick="convertirCookiesTabla()">
+                        🔄 Auto-convertir formato
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>🎫 Tours a consultar:</label>
+                <div class="tours-selection">
+                    {% for key, tour in tours.items() %}
+                    <div class="tour-checkbox">
+                        <input type="checkbox" id="tour_{{ key }}" value="{{ key }}" checked>
+                        <label for="tour_{{ key }}">{{ tour.nombre }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="consultarDisponibilidad()">
+                    🔍 Consultar Disponibilidad
+                </button>
+                <button class="btn btn-success" id="exportBtn" onclick="exportarExcel()" disabled>
+                    📥 Descargar Excel
+                </button>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Consultando disponibilidad... Esto puede tomar unos segundos...</p>
+        </div>
+
+        <div class="results" id="results">
+            <div class="main-card">
+                <h2 class="section-title">📊 Resultados</h2>
+
+                <div class="summary-cards" id="summaryCards"></div>
+
+                <div id="tourResults"></div>
+
+                <div class="timestamp" id="timestamp"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // Configuración adicional si es necesaria
+
+        function convertirCookiesTabla() {
+            const texto = document.getElementById('cookiesInput').value.trim();
+
+            if (!texto) {
+                showAlert('error', 'Por favor, pega las cookies primero');
+                return;
+            }
+
+            // Si ya es JSON válido, no hacer nada
+            try {
+                JSON.parse(texto);
+                showAlert('success', 'Las cookies ya están en formato JSON válido');
+                return;
+            } catch (e) {
+                // No es JSON, continuar con conversión
+            }
+
+            try {
+                const cookies = [];
+                const lineas = texto.split('\n');
+
+                for (const linea of lineas) {
+                    if (!linea.trim() || linea.includes('Name') || linea.includes('Domain')) {
+                        continue; // Saltar header o líneas vacías
+                    }
+
+                    // Separar por tabulación o múltiples espacios
+                    const partes = linea.split(/\t+|\s{2,}/);
+
+                    if (partes.length >= 3) {
+                        const name = partes[0].trim();
+                        const value = partes[1].trim();
+                        const domain = partes[2].trim();
+
+                        // Solo incluir cookies relevantes del dominio colosseo
+                        if (name && value && (domain.includes('colosseo') ||
+                            name.includes('octofence') ||
+                            name.includes('_ga') ||
+                            name === 'PHPSESSID' ||
+                            name === 'qtrans_front_language' ||
+                            name.includes('cookielawinfo'))) {
+
+                            cookies.push({
+                                name: name,
+                                value: value,
+                                domain: domain,
+                                path: "/",
+                                secure: name.includes('octofence-waap-id') || name.includes('octofence-waap-sessid'),
+                                httpOnly: name === 'octofence-waap-id' || name === 'octofence-waap-sessid' || name === 'qtrans_front_language',
+                                sameSite: "Lax"
+                            });
+                        }
+                    }
+                }
+
+                if (cookies.length === 0) {
+                    showAlert('error', 'No se encontraron cookies válidas. Asegúrate de copiar desde Chrome DevTools.');
+                    return;
+                }
+
+                // Convertir a JSON y actualizar textarea
+                const jsonCookies = JSON.stringify(cookies, null, 2);
+                document.getElementById('cookiesInput').value = jsonCookies;
+
+                showAlert('success', `✓ Convertidas ${cookies.length} cookies a formato JSON`);
+
+            } catch (error) {
+                showAlert('error', 'Error al convertir: ' + error.message + '. Usa formato JSON o tabla de Chrome.');
+            }
+        }
+
+        function showAlert(type, message) {
+            const errorAlert = document.getElementById('errorAlert');
+            const successAlert = document.getElementById('successAlert');
+
+            errorAlert.classList.remove('active');
+            successAlert.classList.remove('active');
+
+            if (type === 'error') {
+                errorAlert.textContent = message;
+                errorAlert.classList.add('active');
+            } else {
+                successAlert.textContent = message;
+                successAlert.classList.add('active');
+            }
+
+            setTimeout(() => {
+                errorAlert.classList.remove('active');
+                successAlert.classList.remove('active');
+            }, 5000);
+        }
+
+        async function cargarCookiesArchivo() {
+            try {
+                const response = await fetch('/api/cargar-cookies-archivo', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('cookiesInput').value = data.cookies;
+                    showAlert('success', 'Cookies cargadas desde archivo correctamente');
+                } else {
+                    showAlert('error', data.error || 'No se pudo cargar el archivo de cookies');
+                }
+            } catch (error) {
+                showAlert('error', 'Error al cargar cookies: ' + error.message);
+            }
+        }
+
+        async function consultarDisponibilidad() {
+            const cookiesText = document.getElementById('cookiesInput').value.trim();
+
+            if (!cookiesText) {
+                showAlert('error', 'Por favor, ingresa las cookies');
+                return;
+            }
+
+            // Obtener tours seleccionados
+            const toursSeleccionados = [];
+            document.querySelectorAll('.tour-checkbox input:checked').forEach(checkbox => {
+                toursSeleccionados.push(checkbox.value);
+            });
+
+            if (toursSeleccionados.length === 0) {
+                showAlert('error', 'Por favor, selecciona al menos un tour');
+                return;
+            }
+
+            // Mostrar loading
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('results').classList.remove('active');
+
+            try {
+                const response = await fetch('/api/consultar', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        cookies: cookiesText,
+                        tours: toursSeleccionados,
+                        meses: 6
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error al consultar');
+                }
+
+                currentResults = data;
+                mostrarResultados(data);
+                document.getElementById('exportBtn').disabled = false;
+                showAlert('success', 'Consulta completada exitosamente');
+
+            } catch (error) {
+                showAlert('error', error.message);
+            } finally {
+                document.getElementById('loading').classList.remove('active');
+            }
+        }
+
+        function mostrarResultados(data) {
+            // Mostrar resumen
+            const summaryHtml = `
+                <div class="summary-card">
+                    <h3>Tours Consultados</h3>
+                    <div class="value">${Object.keys(data.resultados).length}</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Meses Consultados</h3>
+                    <div class="value">${data.meses_consultados.length}</div>
+                </div>
+            `;
+            document.getElementById('summaryCards').innerHTML = summaryHtml;
+
+            // Mostrar resultados por tour
+            let toursHtml = '';
+
+            for (const [tourKey, tourData] of Object.entries(data.resultados)) {
+                toursHtml += `
+                    <div class="tour-results">
+                        <div class="tour-header">
+                            <h3>${tourData.nombre}</h3>
+                            <div class="tour-stats">
+                                <span><strong>${tourData.total_fechas}</strong> fechas disponibles</span>
+                                <span><strong>${tourData.total_plazas.toLocaleString()}</strong> plazas totales</span>
+                            </div>
+                        </div>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Día</th>
+                                        <th>Plazas Disponibles</th>
+                                        <th>% Ocupado</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tourData.fechas.map(fecha => `
+                                        <tr>
+                                            <td>${fecha.fecha}</td>
+                                            <td>${fecha.dia_semana}</td>
+                                            <td><strong>${fecha.plazas_disponibles.toLocaleString()}</strong> / ${fecha.plazas_totales.toLocaleString()}</td>
+                                            <td>${fecha.porcentaje_ocupado}%</td>
+                                            <td><span class="badge badge-${fecha.nivel}">${fecha.estado}</span></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+
+            document.getElementById('tourResults').innerHTML = toursHtml;
+            document.getElementById('timestamp').textContent = `Última consulta: ${data.timestamp}`;
+            document.getElementById('results').classList.add('active');
+        }
+
+        async function exportarExcel() {
+            if (!currentResults) {
+                showAlert('error', 'No hay datos para exportar');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/exportar-excel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        resultados: currentResults.resultados
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Error al exportar');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `colosseo_disponibilidad_${new Date().getTime()}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                showAlert('success', 'Archivo Excel descargado correctamente');
+
+            } catch (error) {
+                showAlert('error', 'Error al exportar: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

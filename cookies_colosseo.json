@@ -1,0 +1,74 @@
+[
+  {
+    "name": "_ga",
+    "value": "GA1.1.213433324.1764145616",
+    "domain": ".colosseo.it",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_ga_M4S0PL1M7R",
+    "value": "GS2.1.s1764162733$o4$g0$t1764162733$j60$l0$h0",
+    "domain": ".colosseo.it",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "cookielawinfo-checkbox-necessary",
+    "value": "yes",
+    "domain": "ticketing.colosseo.it",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "cookielawinfo-checkbox-non-necessary",
+    "value": "yes",
+    "domain": "ticketing.colosseo.it",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "isClosed",
+    "value": "true",
+    "domain": "ticketing.colosseo.it",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "octofence_jslc",
+    "value": "bdc75ceebcd96939c9d4727541646e76bc4c40ca54462017ff3069e1638e105b",
+    "domain": "ticketing.colosseo.it",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "octofence_jslc_fp",
+    "value": "3263192997",
+    "domain": "ticketing.colosseo.it",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "qtrans_front_language",
+    "value": "it",
+    "domain": "ticketing.colosseo.it",
+    "path": "/",
+    "secure": false,
+    "httpOnly": true,
+    "sameSite": "Lax"
+  }
+]
