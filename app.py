@@ -5,6 +5,7 @@ Aplicación web Flask para monitorear disponibilidad del Colosseo
 import sys
 import io
 import json
+import os
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_file
 import pandas as pd
@@ -16,6 +17,7 @@ if sys.platform == 'win32':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from api_client import ColosseoAPIClient, AvailabilityChecker
+import storage_client
 
 app = Flask(__name__)
 
@@ -679,9 +681,6 @@ def guardar_historico():
                             cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
                             cell.font = Font(color='999999', italic=True)
 
-        # Guardar archivo
-        wb.save(filename)
-
         # Contar timeslots
         total_timeslots = sum(
             len(tour_data.get('timeslots_por_fecha', {}).get(fecha, []))
@@ -689,19 +688,100 @@ def guardar_historico():
             for fecha in tour_data.get('timeslots_por_fecha', {})
         )
 
-        return jsonify({
-            "success": True,
-            "message": f"Histórico actualizado con snapshot {timestamp} ({total_timeslots} horarios)",
-            "filename": filename,
-            "timestamp": timestamp
-        })
+        # Guardar archivo - local o Supabase
+        if storage_client.is_configured():
+            # Guardar en Supabase Storage
+            output = BytesIO()
+            wb.save(output)
+            output.seek(0)
+
+            upload_result = storage_client.upload_file(
+                output.getvalue(),
+                filename,
+                folder='historico'
+            )
+
+            if upload_result['success']:
+                return jsonify({
+                    "success": True,
+                    "message": f"Historico guardado en la nube ({total_timeslots} horarios)",
+                    "filename": filename,
+                    "timestamp": timestamp,
+                    "url": upload_result.get('url', '')
+                })
+            else:
+                # Fallback a local si falla Supabase
+                wb.save(filename)
+                return jsonify({
+                    "success": True,
+                    "message": f"Historico guardado localmente ({total_timeslots} horarios)",
+                    "filename": filename,
+                    "timestamp": timestamp,
+                    "warning": "No se pudo guardar en la nube"
+                })
+        else:
+            # Guardar localmente
+            wb.save(filename)
+            return jsonify({
+                "success": True,
+                "message": f"Historico actualizado ({total_timeslots} horarios)",
+                "filename": filename,
+                "timestamp": timestamp
+            })
 
     except Exception as e:
-        return jsonify({"error": f"Error al guardar histórico: {str(e)}"}), 500
+        return jsonify({"error": f"Error al guardar historico: {str(e)}"}), 500
 
+
+@app.route('/api/descargar-historico', methods=['GET'])
+def descargar_historico():
+    """
+    Descarga el archivo histórico desde Supabase o local.
+
+    Returns:
+        Archivo Excel o JSON con URL
+    """
+    try:
+        if storage_client.is_configured():
+            # Obtener URL desde Supabase
+            result = storage_client.get_historico_url()
+            if result['success']:
+                return jsonify({
+                    "success": True,
+                    "url": result['url']
+                })
+            else:
+                return jsonify({"error": "Archivo no encontrado en la nube"}), 404
+        else:
+            # Descargar archivo local
+            filename = 'historico_disponibilidad.xlsx'
+            if os.path.exists(filename):
+                return send_file(
+                    filename,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    as_attachment=True,
+                    download_name=filename
+                )
+            else:
+                return jsonify({"error": "Archivo no encontrado"}), 404
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
+@app.route('/api/storage-status', methods=['GET'])
+def storage_status():
+    """Verifica el estado del almacenamiento"""
+    return jsonify({
+        "supabase_configured": storage_client.is_configured(),
+        "mode": "cloud" if storage_client.is_configured() else "local"
+    })
+
+
+# Para Vercel - exportar la app
+application = app
 
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
 
