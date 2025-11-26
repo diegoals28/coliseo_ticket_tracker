@@ -39,9 +39,10 @@ def consultar_tour_completo(client, tour_guid, meses_a_consultar):
     Consulta un tour en múltiples meses
 
     Returns:
-        dict con fechas y sus datos
+        tuple (dict con fechas y sus datos, lista de errores)
     """
     datos_totales = {}
+    debug_info = []
 
     for month in meses_a_consultar:
         data, status, msg = client.fetch_calendar_data(
@@ -49,12 +50,14 @@ def consultar_tour_completo(client, tour_guid, meses_a_consultar):
             month=month
         )
 
+        debug_info.append(f"{month}: status={status}, data={len(data) if data else 0}, msg={msg[:50] if msg else 'ok'}")
+
         if data:
             checker = AvailabilityChecker()
             normalized = checker.normalize_data(data)
             datos_totales.update(normalized)
 
-    return datos_totales
+    return datos_totales, debug_info
 
 
 def obtener_timeslots_detallados(client, tour_guid, meses_a_consultar):
@@ -308,11 +311,15 @@ def consultar_disponibilidad():
 
             try:
                 # Consultar disponibilidad agregada por fecha
-                datos = consultar_tour_completo(
+                datos, debug_info = consultar_tour_completo(
                     client,
                     tour_info['guid'],
                     meses_a_consultar
                 )
+
+                # Agregar debug info a errores para ver qué pasa
+                if not datos:
+                    errores.append(f"{tour_key} sin datos: {'; '.join(debug_info[:3])}")
 
                 # Obtener timeslots detallados
                 timeslots = obtener_timeslots_detallados(
