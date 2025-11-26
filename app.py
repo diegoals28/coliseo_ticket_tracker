@@ -294,9 +294,11 @@ def consultar_disponibilidad():
         # Crear cliente con cookies
         client = ColosseoAPIClient()
         client.cookies = cookies
+        client.create_session_from_cookies(cookies)
 
         # Consultar cada tour
         resultados = {}
+        errores = []
 
         for tour_key in tours_seleccionados:
             if tour_key not in TOURS:
@@ -304,19 +306,23 @@ def consultar_disponibilidad():
 
             tour_info = TOURS[tour_key]
 
-            # Consultar disponibilidad agregada por fecha
-            datos = consultar_tour_completo(
-                client,
-                tour_info['guid'],
-                meses_a_consultar
-            )
+            try:
+                # Consultar disponibilidad agregada por fecha
+                datos = consultar_tour_completo(
+                    client,
+                    tour_info['guid'],
+                    meses_a_consultar
+                )
 
-            # Obtener timeslots detallados
-            timeslots = obtener_timeslots_detallados(
-                client,
-                tour_info['guid'],
-                meses_a_consultar
-            )
+                # Obtener timeslots detallados
+                timeslots = obtener_timeslots_detallados(
+                    client,
+                    tour_info['guid'],
+                    meses_a_consultar
+                )
+            except Exception as e:
+                errores.append(f"{tour_key}: {str(e)}")
+                continue
 
             if datos:
                 # Formatear resultados agregados
@@ -345,7 +351,10 @@ def consultar_disponibilidad():
                 }
 
         if not resultados:
-            return jsonify({"error": "No se pudieron obtener datos. Verifica las cookies"}), 400
+            error_msg = "No se pudieron obtener datos. Verifica las cookies"
+            if errores:
+                error_msg += f". Errores: {'; '.join(errores)}"
+            return jsonify({"error": error_msg}), 400
 
         return jsonify({
             "success": True,
