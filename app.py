@@ -354,6 +354,8 @@ def consultar_disponibilidad():
             error_msg = "No se pudieron obtener datos. Verifica las cookies"
             if errores:
                 error_msg += f". Errores: {'; '.join(errores)}"
+            # Debug info
+            error_msg += f". Tours intentados: {tours_seleccionados}. Meses: {meses_a_consultar}. Cookies recibidas: {len(cookies)}"
             return jsonify({"error": error_msg}), 400
 
         return jsonify({
