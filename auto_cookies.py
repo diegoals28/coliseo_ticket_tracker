@@ -151,11 +151,21 @@ def debug_page(driver, step_name):
     from selenium.webdriver.common.by import By
     try:
         tariffs = driver.find_elements(By.CSS_SELECTOR, ".tariff-option")
-        print(f"  Tarifas encontradas: {len(tariffs)}")
-        calendars = driver.find_elements(By.CSS_SELECTOR, "[class*='calendar'], .fc-view")
-        print(f"  Calendarios encontrados: {len(calendars)}")
-    except:
-        pass
+        print(f"  Tarifas (.tariff-option): {len(tariffs)}")
+
+        datepicker = driver.find_elements(By.CSS_SELECTOR, ".ui-datepicker, .ui-datepicker-calendar")
+        print(f"  Datepicker (jQuery UI): {len(datepicker)}")
+
+        available_days = driver.find_elements(By.CSS_SELECTOR, "td[data-handler='selectDay'] a")
+        print(f"  Días disponibles: {len(available_days)}")
+
+        slots = driver.find_elements(By.CSS_SELECTOR, "input[name='slot']")
+        print(f"  Horarios (radio): {len(slots)}")
+
+        plus_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-dir='up']")
+        print(f"  Botones +: {len(plus_btns)}")
+    except Exception as e:
+        print(f"  Error debug: {e}")
 
 
 def complete_booking_flow(driver):
@@ -188,17 +198,16 @@ def complete_booking_flow(driver):
         # ============ PASO 1: Buscar y clickear en el calendario ============
         print("\n[Step 1] Buscando calendario y día disponible...")
 
+        # jQuery UI Datepicker - días clickeables
         calendar_selectors = [
-            ".fc-day-future:not(.fc-day-disabled)",  # FullCalendar días futuros
-            ".fc-daygrid-day:not(.fc-day-disabled)",
-            "td.fc-day:not(.fc-day-past):not(.fc-day-disabled)",
-            "[data-date]:not(.disabled)",
-            ".calendar td.available",
-            ".day-cell.available",
-            "td[class*='available']"
+            "td[data-handler='selectDay'] a.ui-state-default",  # jQuery UI datepicker
+            "td:not(.ui-datepicker-unselectable) a.ui-state-default",
+            "td:not(.ui-state-disabled) a[data-date]",
+            ".ui-datepicker td a.ui-state-default",
+            "a.ui-state-default[data-date]"
         ]
 
-        day_elements = wait_for_element(driver, calendar_selectors, timeout=10, description="día en calendario")
+        day_elements = wait_for_element(driver, calendar_selectors, timeout=15, description="día en calendario")
 
         if day_elements:
             for day in day_elements[:5]:
@@ -222,30 +231,43 @@ def complete_booking_flow(driver):
         # ============ PASO 2: Seleccionar horario ============
         print("\n[Step 2] Buscando horarios...")
 
+        # Radio buttons para horarios
         time_selectors = [
-            ".timeslot",
-            ".time-slot",
-            "[class*='timeslot']",
-            ".slot-time",
-            ".hour-slot",
-            "button[class*='time']",
-            ".schedule-item",
-            "[data-time]"
+            "input[type='radio'][name='slot']",  # Radio buttons de horario
+            "input[name='slot']",
+            "input[type='radio'][value*='=']"  # Los valores parecen ser encoded
         ]
 
-        time_elements = wait_for_element(driver, time_selectors, timeout=10, description="horario")
+        time_elements = wait_for_element(driver, time_selectors, timeout=15, description="horario")
 
         if time_elements:
             for t in time_elements[:3]:
                 try:
+                    # Para radio buttons, hacer click directamente
                     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", t)
                     time.sleep(1)
                     driver.execute_script("arguments[0].click();", t)
-                    print(f"  Click en horario: {t.text.strip()[:20] if t.text else 'slot'}")
+                    print(f"  Click en horario (radio button)")
                     time.sleep(3)
                     break
                 except:
                     continue
+        else:
+            # Intentar click en el contenedor del horario (div/span con la hora)
+            print("  Intentando click en texto de hora...")
+            try:
+                hora_elements = driver.find_elements(By.XPATH, "//span[contains(text(), 'PM') or contains(text(), 'AM')]")
+                if hora_elements:
+                    for h in hora_elements[:3]:
+                        try:
+                            driver.execute_script("arguments[0].click();", h)
+                            print(f"  Click en: {h.text}")
+                            time.sleep(3)
+                            break
+                        except:
+                            continue
+            except:
+                pass
 
         debug_page(driver, "después de horario")
 
