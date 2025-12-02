@@ -1,37 +1,61 @@
 // Estado global
 let currentResults = null;
-let cookiesLoaded = false;
+let currentCookies = null;
 
 // Auto-cargar cookies de Supabase al iniciar
 document.addEventListener('DOMContentLoaded', async function() {
     await cargarCookiesAutomaticas();
 });
 
+// Actualizar estado visual de cookies
+function actualizarEstadoCookies(estado, titulo, detalle) {
+    const statusBox = document.getElementById('cookieStatus');
+    statusBox.className = 'status-box ' + estado;
+    statusBox.innerHTML = `
+        <div class="status-title">${titulo}</div>
+        <div class="status-detail">${detalle}</div>
+    `;
+}
+
 // Cargar cookies automáticas desde Supabase
 async function cargarCookiesAutomaticas() {
+    actualizarEstadoCookies('loading', 'Cargando cookies...', 'Conectando con Supabase');
+
     try {
-        console.log('[Auto] Cargando cookies desde Supabase...');
         const response = await fetch('/api/cookies/auto');
         const data = await response.json();
 
         if (data.success && data.cookies) {
-            document.getElementById('cookiesInput').value = data.cookies;
-            cookiesLoaded = true;
+            currentCookies = data.cookies;
 
             const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'desconocido';
-            showAlert('success', `Cookies cargadas automaticamente (${data.count} cookies, actualizadas: ${timestamp})`);
+            actualizarEstadoCookies('success',
+                `Cookies activas (${data.count})`,
+                `Actualizadas: ${timestamp} | Fuente: ${data.source || 'automatico'}`
+            );
 
             // Auto-consultar disponibilidad
-            setTimeout(() => {
-                consultarDisponibilidad();
-            }, 1000);
+            await consultarDisponibilidad();
         } else {
-            console.log('[Auto] No hay cookies en Supabase:', data.error);
-            showAlert('error', 'No hay cookies automaticas disponibles. Por favor, pega las cookies manualmente.');
+            actualizarEstadoCookies('error',
+                'Sin cookies disponibles',
+                data.error || 'No se encontraron cookies en Supabase. Ejecuta el workflow de GitHub Actions.'
+            );
         }
     } catch (error) {
         console.error('[Auto] Error cargando cookies:', error);
+        actualizarEstadoCookies('error',
+            'Error de conexion',
+            'No se pudo conectar con el servidor: ' + error.message
+        );
     }
+}
+
+// Refrescar cookies (recargar desde Supabase)
+async function refrescarCookies() {
+    document.getElementById('refreshBtn').disabled = true;
+    await cargarCookiesAutomaticas();
+    document.getElementById('refreshBtn').disabled = false;
 }
 
 // Mostrar alertas
@@ -56,145 +80,13 @@ function showAlert(type, message) {
     }, 5000);
 }
 
-// Convertir cookies de tabla a JSON
-function convertirCookiesTabla() {
-    const texto = document.getElementById('cookiesInput').value.trim();
-
-    if (!texto) {
-        showAlert('error', 'Por favor, pega las cookies primero');
-        return;
-    }
-
-    // Si ya es JSON válido, no hacer nada
-    try {
-        JSON.parse(texto);
-        showAlert('success', 'Las cookies ya están en formato JSON válido');
-        return;
-    } catch (e) {
-        // No es JSON, continuar con conversión
-    }
-
-    try {
-        const cookies = [];
-        const lineas = texto.split('\n');
-
-        for (const linea of lineas) {
-            if (!linea.trim() || linea.includes('Name') || linea.includes('Domain')) {
-                continue;
-            }
-
-            const partes = linea.split(/\t+|\s{2,}/);
-
-            if (partes.length >= 3) {
-                const name = partes[0].trim();
-                const value = partes[1].trim();
-                const domain = partes[2].trim();
-
-                if (name && value && (domain.includes('colosseo') ||
-                    name.includes('octofence') ||
-                    name.includes('_ga') ||
-                    name === 'PHPSESSID' ||
-                    name === 'qtrans_front_language' ||
-                    name.includes('cookielawinfo'))) {
-
-                    cookies.push({
-                        name: name,
-                        value: value,
-                        domain: domain,
-                        path: "/",
-                        secure: name.includes('octofence-waap-id') || name.includes('octofence-waap-sessid'),
-                        httpOnly: name === 'octofence-waap-id' || name === 'octofence-waap-sessid' || name === 'qtrans_front_language',
-                        sameSite: "Lax"
-                    });
-                }
-            }
-        }
-
-        if (cookies.length === 0) {
-            showAlert('error', 'No se encontraron cookies válidas. Asegúrate de copiar desde Chrome DevTools.');
-            return;
-        }
-
-        const jsonCookies = JSON.stringify(cookies, null, 2);
-        document.getElementById('cookiesInput').value = jsonCookies;
-
-        showAlert('success', `✓ Convertidas ${cookies.length} cookies a formato JSON`);
-
-    } catch (error) {
-        showAlert('error', 'Error al convertir: ' + error.message);
-    }
-}
-
-// Cargar cookies desde archivo
-async function cargarCookiesArchivo() {
-    try {
-        const response = await fetch('/api/cargar-cookies-archivo', {
-            method: 'POST'
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            document.getElementById('cookiesInput').value = data.cookies;
-            showAlert('success', 'Cookies cargadas desde archivo correctamente');
-        } else {
-            showAlert('error', data.error || 'No se pudo cargar el archivo de cookies');
-        }
-    } catch (error) {
-        showAlert('error', 'Error al cargar cookies: ' + error.message);
-    }
-}
-
-// Guardar cookies en archivo
-async function guardarCookies() {
-    const cookiesText = document.getElementById('cookiesInput').value.trim();
-
-    if (!cookiesText) {
-        showAlert('error', 'Por favor, pega las cookies primero');
-        return;
-    }
-
-    // Verificar que sea JSON válido
-    try {
-        JSON.parse(cookiesText);
-    } catch (e) {
-        showAlert('error', 'Las cookies deben estar en formato JSON. Usa "Auto-convertir formato" primero');
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/guardar-cookies', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                cookies: cookiesText
-            })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            showAlert('success', '✓ Cookies guardadas en cookies_colosseo.json');
-        } else {
-            showAlert('error', data.error || 'Error al guardar cookies');
-        }
-    } catch (error) {
-        showAlert('error', 'Error al guardar: ' + error.message);
-    }
-}
-
 // Consultar disponibilidad
 async function consultarDisponibilidad() {
-    const cookiesText = document.getElementById('cookiesInput').value.trim();
-
-    if (!cookiesText) {
-        showAlert('error', 'Por favor, ingresa las cookies');
+    if (!currentCookies) {
+        showAlert('error', 'No hay cookies disponibles');
         return;
     }
 
-    // Consultar todos los tours siempre
     const toursSeleccionados = ['24h-grupos', 'arena'];
 
     document.getElementById('loading').classList.add('active');
@@ -207,7 +99,7 @@ async function consultarDisponibilidad() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                cookies: cookiesText,
+                cookies: currentCookies,
                 tours: toursSeleccionados,
                 meses: 6
             })
@@ -221,12 +113,9 @@ async function consultarDisponibilidad() {
 
         currentResults = data;
         mostrarResultados(data);
-        document.getElementById('exportBtn').disabled = false;
 
         // Guardar automáticamente en histórico
         guardarHistoricoAutomatico(data);
-
-        showAlert('success', 'Consulta completada exitosamente');
 
     } catch (error) {
         showAlert('error', error.message);
@@ -251,14 +140,10 @@ async function guardarHistoricoAutomatico(data) {
         const result = await response.json();
 
         if (result.success) {
-            console.log('✓ Histórico guardado:', result.message);
-            // Mostrar mensaje discreto
-            setTimeout(() => {
-                showAlert('success', `📊 ${result.message} en ${result.filename}`);
-            }, 2000);
+            console.log('Historico guardado:', result.message);
         }
     } catch (error) {
-        console.error('Error guardando histórico:', error);
+        console.error('Error guardando historico:', error);
     }
 }
 
@@ -267,7 +152,6 @@ const ICONS = {
     calendar: '<svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>',
     chart: '<svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>',
     clock: '<svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>',
-    ticket: '<svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 0 1 0 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 0 1 0-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375Z" /></svg>',
     chevronDown: '<svg class="icon-sm" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>',
     calendarDays: '<svg class="icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5m-9-6h.008v.008H12v-.008ZM12 15h.008v.008H12V15Zm0 2.25h.008v.008H12v-.008ZM9.75 15h.008v.008H9.75V15Zm0 2.25h.008v.008H9.75v-.008ZM7.5 15h.008v.008H7.5V15Zm0 2.25h.008v.008H7.5v-.008Zm6.75-4.5h.008v.008h-.008v-.008Zm0 2.25h.008v.008h-.008V15Zm0 2.25h.008v.008h-.008v-.008Zm2.25-4.5h.008v.008H16.5v-.008Zm0 2.25h.008v.008H16.5V15Z" /></svg>'
 };
@@ -328,17 +212,11 @@ function mostrarResultados(data) {
 
 // Generar tabla de fechas con timeslots expandibles
 function generarTablaFechas(tourData) {
-    console.log('generarTablaFechas - Tour:', tourData.nombre);
-    console.log('timeslots_por_fecha keys:', Object.keys(tourData.timeslots_por_fecha || {}));
-
-    // Crear ID único para el tour
     const tourId = tourData.guid.substring(0, 8);
-
     let html = '';
 
     for (const fecha of tourData.fechas) {
         const timeslots = tourData.timeslots_por_fecha[fecha.fecha] || [];
-        // ID único: tour_fecha (ej: a9a4b0f8_2025_11_25)
         const fechaId = tourId + '_' + fecha.fecha.replace(/[^a-z0-9]/gi, '_');
 
         html += `
@@ -360,7 +238,7 @@ function generarTablaFechas(tourData) {
         <div class="fechas-container">
             <div class="fechas-header">
                 <div class="fecha-cell fecha-fecha">Fecha</div>
-                <div class="fecha-cell fecha-dia">Día</div>
+                <div class="fecha-cell fecha-dia">Dia</div>
                 <div class="fecha-cell fecha-plazas">Plazas Disponibles</div>
                 <div class="fecha-cell fecha-ocupado">% Ocupado</div>
                 <div class="fecha-cell fecha-estado">Estado</div>
@@ -373,23 +251,17 @@ function generarTablaFechas(tourData) {
 
 // Generar grid de timeslots
 function generarTimeslotsGrid(timeslots) {
-    console.log('generarTimeslotsGrid llamado con:', timeslots ? timeslots.length : 'null', 'timeslots');
-
     if (!timeslots || timeslots.length === 0) {
-        console.log('No hay timeslots disponibles');
         return '<p style="padding: 15px; color: #666;">No hay horarios detallados disponibles</p>';
     }
 
     let html = '<div class="timeslots-grid">';
 
-    // Ordenar por hora
     const timeslotsSorted = [...timeslots].sort((a, b) => {
         const horaA = a.hora || '00:00';
         const horaB = b.hora || '00:00';
         return horaA.localeCompare(horaB);
     });
-
-    console.log('Primeros 3 timeslots ordenados:', timeslotsSorted.slice(0, 3));
 
     for (const ts of timeslotsSorted) {
         let clase = 'disponible';
@@ -458,53 +330,12 @@ function toggleTimeslots(fechaId) {
 
 // Cambiar tab
 function cambiarTab(tourId, tabName, event) {
-    // Desactivar todos los tabs del tour
     const container = event.target.closest('.tour-section');
     container.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     container.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
-    // Activar tab seleccionado
     event.target.classList.add('active');
     document.getElementById(`${tourId}_${tabName}`).classList.add('active');
-}
-
-// Exportar a Excel
-async function exportarExcel() {
-    if (!currentResults) {
-        showAlert('error', 'No hay datos para exportar');
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/exportar-excel', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                resultados: currentResults.resultados
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error('Error al exportar');
-        }
-
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `colosseo_disponibilidad_${new Date().getTime()}.xlsx`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-
-        showAlert('success', 'Archivo Excel descargado correctamente');
-
-    } catch (error) {
-        showAlert('error', 'Error al exportar: ' + error.message);
-    }
 }
 
 // Descargar histórico desde Supabase
@@ -536,13 +367,8 @@ async function descargarHistorico() {
     }
 }
 
-// Exponer funciones globalmente para que funcionen con onclick en HTML
-window.convertirCookiesTabla = convertirCookiesTabla;
-window.cargarCookiesArchivo = cargarCookiesArchivo;
-window.guardarCookies = guardarCookies;
-window.consultarDisponibilidad = consultarDisponibilidad;
+// Exponer funciones globalmente
+window.refrescarCookies = refrescarCookies;
 window.toggleTimeslots = toggleTimeslots;
 window.cambiarTab = cambiarTab;
-window.exportarExcel = exportarExcel;
 window.descargarHistorico = descargarHistorico;
-window.cargarCookiesAutomaticas = cargarCookiesAutomaticas;
