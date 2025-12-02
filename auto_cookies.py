@@ -1,22 +1,20 @@
 """
 Script para obtener cookies automáticamente del sitio del Colosseo.
-Diseñado para ejecutarse en GitHub Actions con soporte de proxy.
+Usa ScrapingBee para bypass de anti-bot (Octofence).
 
 Flujo:
-1. Entrar al sitio y pasar Octofence
-2. Seleccionar un día en el calendario
-3. Seleccionar un horario
-4. Incrementar cantidad con botón +
-5. Agregar al carrito
-6. Extraer cookies de sesión
+1. Usar ScrapingBee para cargar la página con JavaScript rendering
+2. Extraer cookies de sesión
+3. Guardar en Supabase
 """
 
 import os
 import sys
 import json
 import time
-import random
+import requests
 from datetime import datetime
+from urllib.parse import urlencode, quote
 
 # Configurar encoding UTF-8
 if sys.platform == 'win32':
@@ -25,418 +23,213 @@ if sys.platform == 'win32':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 
-def get_proxy_config():
-    """Obtiene configuración de proxy desde variables de entorno"""
-    proxy_list = os.environ.get('PROXY_LIST', '')
-    if proxy_list:
-        proxies = [p.strip() for p in proxy_list.split(',') if p.strip()]
-        if proxies:
-            proxy = random.choice(proxies)
-            print(f"[Proxy] Usando: {proxy[:40]}...")
-            return proxy
+SCRAPINGBEE_API_KEY = os.environ.get('SCRAPINGBEE_API_KEY', '')
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
+
+# URL del tour
+TOUR_URL = "https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-palatino-gruppi/"
+
+
+def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None):
+    """
+    Usa ScrapingBee para cargar una página con JavaScript rendering.
+
+    Args:
+        url: URL a cargar
+        wait_time: Tiempo de espera para JavaScript (ms)
+        js_scenario: Escenario de JavaScript a ejecutar
+
+    Returns:
+        dict con 'success', 'html', 'cookies' o 'error'
+    """
+    if not SCRAPINGBEE_API_KEY:
+        return {'success': False, 'error': 'SCRAPINGBEE_API_KEY no configurada'}
+
+    print(f"[ScrapingBee] Cargando: {url[:60]}...")
+
+    params = {
+        'api_key': SCRAPINGBEE_API_KEY,
+        'url': url,
+        'render_js': 'true',
+        'premium_proxy': 'true',  # Mejor para sitios con anti-bot
+        'country_code': 'it',     # Proxy italiano para sitio italiano
+        'wait': wait_time,        # Esperar JS
+        'wait_for': '.ui-datepicker, .tariff-option, #calendar',  # Esperar elementos
+        'return_page_source': 'true',
+        'json_response': 'true',  # Obtener cookies y metadata
+    }
+
+    if js_scenario:
+        params['js_scenario'] = json.dumps(js_scenario)
+
+    try:
+        response = requests.get(
+            'https://app.scrapingbee.com/api/v1/',
+            params=params,
+            timeout=120
+        )
+
+        print(f"[ScrapingBee] Status: {response.status_code}")
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                return {
+                    'success': True,
+                    'html': data.get('body', ''),
+                    'cookies': data.get('cookies', {}),
+                    'headers': data.get('headers', {}),
+                    'status': data.get('status_code', 200)
+                }
+            except:
+                # Respuesta no es JSON, es HTML directo
+                return {
+                    'success': True,
+                    'html': response.text,
+                    'cookies': {},
+                    'headers': dict(response.headers)
+                }
+        else:
+            error_msg = response.text[:500] if response.text else f"HTTP {response.status_code}"
+            print(f"[ScrapingBee] Error: {error_msg}")
+            return {'success': False, 'error': error_msg}
+
+    except Exception as e:
+        print(f"[ScrapingBee] Exception: {e}")
+        return {'success': False, 'error': str(e)}
+
+
+def extract_cookies_from_page():
+    """
+    Extrae cookies del sitio usando ScrapingBee con JavaScript scenario
+    para simular el flujo de reserva.
+    """
+    print("\n[Step 1] Cargando página inicial...")
+
+    # Escenario de JavaScript para interactuar con la página
+    js_scenario = {
+        "instructions": [
+            # Esperar a que cargue el contenido
+            {"wait": 5000},
+
+            # Hacer scroll para activar lazy loading
+            {"scroll_y": 500},
+            {"wait": 2000},
+            {"scroll_y": 0},
+            {"wait": 2000},
+
+            # Intentar click en un día del calendario si existe
+            {"click": "td[data-handler='selectDay'] a.ui-state-default", "timeout": 5000, "ignore_errors": True},
+            {"wait": 3000},
+
+            # Intentar seleccionar horario
+            {"click": "input[name='slot']", "timeout": 5000, "ignore_errors": True},
+            {"wait": 3000},
+
+            # Intentar click en botón + de tarifa
+            {"click": "button[data-dir='up']", "timeout": 5000, "ignore_errors": True},
+            {"wait": 3000},
+
+            # Intentar agregar al carrito
+            {"click": "button[type='submit'], .add-to-cart, .btn-primary", "timeout": 5000, "ignore_errors": True},
+            {"wait": 5000},
+        ]
+    }
+
+    result = fetch_with_scrapingbee(TOUR_URL, wait_time=15000, js_scenario=js_scenario)
+
+    if not result['success']:
+        print(f"[Error] {result.get('error', 'Unknown error')}")
+        return None
+
+    html = result.get('html', '')
+    cookies = result.get('cookies', {})
+
+    print(f"[Result] HTML length: {len(html)} chars")
+    print(f"[Result] Cookies: {len(cookies)}")
+
+    # Debug: verificar contenido
+    html_lower = html.lower()
+    indicators = {
+        'calendar': 'calendar' in html_lower or 'datepicker' in html_lower,
+        'tariff': 'tariff' in html_lower,
+        'slot': 'slot' in html_lower,
+        'octofence': 'octofence' in html_lower or 'waiting' in html_lower[:2000]
+    }
+
+    print(f"[Debug] Indicadores: {indicators}")
+
+    if indicators['octofence'] and not indicators['calendar']:
+        print("[Warning] Posible bloqueo de Octofence")
+
+    if cookies:
+        print(f"[Success] Cookies obtenidas: {list(cookies.keys())}")
+        # Convertir cookies de dict a lista de dicts para compatibilidad
+        cookies_list = [
+            {'name': k, 'value': v, 'domain': '.colosseo.it'}
+            for k, v in cookies.items()
+        ]
+        return cookies_list
+
+    # Si no hay cookies en la respuesta, intentar extraerlas del HTML
+    # (algunos sitios las setean via JavaScript)
+    print("[Info] No se encontraron cookies en respuesta, intentando método alternativo...")
+
     return None
 
 
-def setup_driver_with_proxy(proxy=None):
-    """Configura el driver de Chrome con proxy y anti-detección"""
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
+def fetch_simple_page():
+    """
+    Método más simple: solo cargar la página y obtener cookies iniciales.
+    A veces es suficiente para obtener cookies de sesión básicas.
+    """
+    print("\n[Simple] Cargando página con método simple...")
 
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    result = fetch_with_scrapingbee(TOUR_URL, wait_time=20000)
 
-    if proxy:
-        proxy_clean = proxy.replace("http://", "").replace("https://", "")
-        options.add_argument(f"--proxy-server=http://{proxy_clean}")
+    if not result['success']:
+        print(f"[Error] {result.get('error', 'Unknown error')}")
+        return None
 
-    driver = webdriver.Chrome(options=options)
+    cookies = result.get('cookies', {})
+    html = result.get('html', '')
 
-    # Scripts anti-detección
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-            Object.defineProperty(navigator, 'webdriver', {get: () => false});
-            window.navigator.chrome = {runtime: {}};
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-        """
-    })
+    print(f"[Simple] HTML: {len(html)} chars, Cookies: {len(cookies)}")
 
-    print("[Driver] Chrome iniciado")
-    return driver
+    # Guardar HTML para debug
+    try:
+        with open('debug_scrapingbee.html', 'w', encoding='utf-8') as f:
+            f.write(html)
+        print("[Debug] HTML guardado en debug_scrapingbee.html")
+    except:
+        pass
 
-
-def wait_for_page_load(driver, timeout=180):
-    """Espera a que la página cargue, pasando Octofence"""
-    print(f"[Wait] Esperando carga de página (timeout: {timeout}s)...")
-
-    start_time = time.time()
-
-    while time.time() - start_time < timeout:
-        try:
-            title = driver.title.lower()
-            url = driver.current_url.lower()
-            page_source = driver.page_source.lower()[:5000]
-
-            # Detectar bloqueo
-            if "automation" in page_source and "detected" in page_source:
-                print("[Wait] BLOQUEADO: Automatización detectada")
-                return False
-
-            # Detectar página de espera Octofence
-            if "waiting" in title or "octofence" in page_source:
-                elapsed = int(time.time() - start_time)
-                print(f"[Wait] Octofence verificando... ({elapsed}s)")
-                time.sleep(5)
-                continue
-
-            # Detectar página exitosa
-            if "colosseo" in title or "colosseo" in url:
-                if "eventi" in page_source or "biglietti" in page_source or "ticket" in page_source:
-                    print("[Wait] Página cargada exitosamente!")
-                    return True
-
-            time.sleep(5)
-
-        except Exception as e:
-            print(f"[Wait] Error: {e}")
-            time.sleep(5)
-
-    print(f"[Wait] Timeout alcanzado ({timeout}s)")
-    return False
-
-
-def wait_for_element(driver, selectors, timeout=15, description="elemento"):
-    """Espera a que aparezca un elemento"""
-    from selenium.webdriver.common.by import By
-
-    print(f"[Wait] Buscando {description}...")
-    start = time.time()
-
-    while time.time() - start < timeout:
-        for selector in selectors:
-            try:
-                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                visible = [e for e in elements if e.is_displayed()]
-                if visible:
-                    print(f"  Encontrado con '{selector}' ({len(visible)} visibles)")
-                    return visible
-            except:
-                continue
-        time.sleep(1)
-
-    print(f"  No encontrado después de {timeout}s")
-    return []
-
-
-def debug_page(driver, step_name, save_html=False):
-    """Muestra información de debug de la página actual"""
-    print(f"\n[Debug {step_name}]")
-    print(f"  URL: {driver.current_url}")
-    print(f"  Title: {driver.title}")
-    cookies = driver.get_cookies()
-    print(f"  Cookies: {len(cookies)}")
     if cookies:
-        names = [c.get('name', '')[:20] for c in cookies[:5]]
-        print(f"  Cookie names: {names}")
-
-    # Mostrar elementos clave encontrados
-    from selenium.webdriver.common.by import By
-    try:
-        tariffs = driver.find_elements(By.CSS_SELECTOR, ".tariff-option")
-        print(f"  Tarifas (.tariff-option): {len(tariffs)}")
-
-        datepicker = driver.find_elements(By.CSS_SELECTOR, ".ui-datepicker, .ui-datepicker-calendar")
-        print(f"  Datepicker (jQuery UI): {len(datepicker)}")
-
-        available_days = driver.find_elements(By.CSS_SELECTOR, "td[data-handler='selectDay'] a")
-        print(f"  Días disponibles: {len(available_days)}")
-
-        slots = driver.find_elements(By.CSS_SELECTOR, "input[name='slot']")
-        print(f"  Horarios (radio): {len(slots)}")
-
-        plus_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-dir='up']")
-        print(f"  Botones +: {len(plus_btns)}")
-
-        # Mostrar parte del HTML para debug
-        page_len = len(driver.page_source)
-        print(f"  HTML length: {page_len} chars")
-
-        # Buscar indicadores de contenido cargado
-        html_lower = driver.page_source.lower()
-        if "calendar" in html_lower:
-            print(f"  'calendar' encontrado en HTML")
-        if "tariff" in html_lower:
-            print(f"  'tariff' encontrado en HTML")
-        if "octofence" in html_lower or "waiting" in html_lower:
-            print(f"  ADVERTENCIA: Posible bloqueo Octofence en HTML")
-
-    except Exception as e:
-        print(f"  Error debug: {e}")
-
-    # Guardar screenshot y HTML si se solicita
-    if save_html:
-        try:
-            driver.save_screenshot(f"debug_{step_name}.png")
-            print(f"  Screenshot guardado: debug_{step_name}.png")
-        except:
-            pass
-        try:
-            with open(f"debug_{step_name}.html", "w", encoding="utf-8") as f:
-                f.write(driver.page_source)
-            print(f"  HTML guardado: debug_{step_name}.html")
-        except:
-            pass
-
-
-def complete_booking_flow(driver):
-    """
-    Completa el flujo de reserva para generar cookies de sesión.
-    Basado en la estructura real del sitio:
-    - .tariff-option para tarifas
-    - button[data-dir="up"] para incrementar
-    """
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.common.action_chains import ActionChains
-
-    print("\n[Flow] Iniciando flujo de reserva...")
-
-    try:
-        # Esperar a que cargue el contenido dinámico
-        print("\n[Step 0] Esperando carga de contenido dinámico...")
-        time.sleep(10)
-
-        # Scroll para cargar contenido lazy
-        driver.execute_script("window.scrollTo(0, 500);")
-        time.sleep(3)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(3)
-
-        # Intentar activar JavaScript esperando más
-        driver.execute_script("return document.readyState")
-        time.sleep(5)
-
-        debug_page(driver, "inicial", save_html=True)
-
-        # ============ PASO 1: Buscar y clickear en el calendario ============
-        print("\n[Step 1] Buscando calendario y día disponible...")
-
-        # jQuery UI Datepicker - días clickeables
-        calendar_selectors = [
-            "td[data-handler='selectDay'] a.ui-state-default",  # jQuery UI datepicker
-            "td:not(.ui-datepicker-unselectable) a.ui-state-default",
-            "td:not(.ui-state-disabled) a[data-date]",
-            ".ui-datepicker td a.ui-state-default",
-            "a.ui-state-default[data-date]"
+        cookies_list = [
+            {'name': k, 'value': v, 'domain': '.colosseo.it'}
+            for k, v in cookies.items()
         ]
+        return cookies_list
 
-        day_elements = wait_for_element(driver, calendar_selectors, timeout=15, description="día en calendario")
-
-        if day_elements:
-            for day in day_elements[:5]:
-                try:
-                    # Intentar obtener la fecha
-                    date_attr = day.get_attribute("data-date") or day.text.strip()
-                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", day)
-                    time.sleep(1)
-                    driver.execute_script("arguments[0].click();", day)
-                    print(f"  Click en día: {date_attr[:15] if date_attr else 'unknown'}")
-                    time.sleep(3)
-                    break
-                except Exception as e:
-                    print(f"  Error en día: {e}")
-                    continue
-        else:
-            print("  No se encontró calendario, continuando...")
-
-        debug_page(driver, "después de calendario")
-
-        # ============ PASO 2: Seleccionar horario ============
-        print("\n[Step 2] Buscando horarios...")
-
-        # Radio buttons para horarios
-        time_selectors = [
-            "input[type='radio'][name='slot']",  # Radio buttons de horario
-            "input[name='slot']",
-            "input[type='radio'][value*='=']"  # Los valores parecen ser encoded
-        ]
-
-        time_elements = wait_for_element(driver, time_selectors, timeout=15, description="horario")
-
-        if time_elements:
-            for t in time_elements[:3]:
-                try:
-                    # Para radio buttons, hacer click directamente
-                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", t)
-                    time.sleep(1)
-                    driver.execute_script("arguments[0].click();", t)
-                    print(f"  Click en horario (radio button)")
-                    time.sleep(3)
-                    break
-                except:
-                    continue
-        else:
-            # Intentar click en el contenedor del horario (div/span con la hora)
-            print("  Intentando click en texto de hora...")
-            try:
-                hora_elements = driver.find_elements(By.XPATH, "//span[contains(text(), 'PM') or contains(text(), 'AM')]")
-                if hora_elements:
-                    for h in hora_elements[:3]:
-                        try:
-                            driver.execute_script("arguments[0].click();", h)
-                            print(f"  Click en: {h.text}")
-                            time.sleep(3)
-                            break
-                        except:
-                            continue
-            except:
-                pass
-
-        debug_page(driver, "después de horario")
-
-        # ============ PASO 3: Seleccionar tarifa e incrementar cantidad ============
-        print("\n[Step 3] Buscando tarifas (.tariff-option)...")
-
-        tariff_selectors = [
-            ".tariff-option",
-            "[class*='tariff']",
-            ".ticket-type",
-            ".price-option"
-        ]
-
-        tariff_elements = wait_for_element(driver, tariff_selectors, timeout=10, description="tarifa")
-
-        if tariff_elements:
-            print(f"  Encontradas {len(tariff_elements)} tarifas")
-
-            # Buscar el botón + dentro de la tarifa
-            for tariff in tariff_elements[:2]:
-                try:
-                    # Buscar botón de incremento (data-dir="up" o clase plus)
-                    plus_btn = None
-                    try:
-                        plus_btn = tariff.find_element(By.CSS_SELECTOR, "button[data-dir='up']")
-                    except:
-                        try:
-                            plus_btn = tariff.find_element(By.CSS_SELECTOR, "button.plus, .btn-plus, [class*='plus']")
-                        except:
-                            try:
-                                plus_btn = tariff.find_element(By.CSS_SELECTOR, "button:last-of-type")
-                            except:
-                                pass
-
-                    if plus_btn:
-                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", plus_btn)
-                        time.sleep(1)
-                        driver.execute_script("arguments[0].click();", plus_btn)
-                        print(f"  Click en botón + para agregar 1 entrada")
-                        time.sleep(3)
-                        break
-                    else:
-                        print(f"  No se encontró botón + en esta tarifa")
-                except Exception as e:
-                    print(f"  Error en tarifa: {e}")
-                    continue
-
-        debug_page(driver, "después de tarifa")
-
-        # ============ PASO 4: Buscar y click en agregar al carrito ============
-        print("\n[Step 4] Buscando botón de agregar al carrito...")
-
-        cart_selectors = [
-            "button[class*='cart']",
-            "button[class*='add']",
-            ".add-to-cart",
-            ".btn-cart",
-            "[class*='aggiungi']",
-            "[class*='acquista']",
-            "button.btn-primary",
-            "input[type='submit']",
-            "button[type='submit']"
-        ]
-
-        cart_buttons = wait_for_element(driver, cart_selectors, timeout=10, description="botón carrito")
-
-        if cart_buttons:
-            for btn in cart_buttons:
-                try:
-                    btn_text = btn.text.strip().lower()
-                    # Evitar botones negativos
-                    if any(x in btn_text for x in ['cancel', 'close', 'annulla', 'rimuovi']):
-                        continue
-                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
-                    time.sleep(1)
-                    driver.execute_script("arguments[0].click();", btn)
-                    print(f"  Click en: {btn.text.strip()[:30] if btn.text else 'botón'}")
-                    time.sleep(5)
-                    break
-                except:
-                    continue
-
-        debug_page(driver, "después de carrito")
-
-        # ============ PASO 5: Esperar cookies ============
-        print("\n[Step 5] Esperando generación de cookies...")
-
-        # Esperar más tiempo para que se procese
-        time.sleep(5)
-
-        # Interacciones adicionales
-        driver.execute_script("window.scrollTo(0, 500);")
-        time.sleep(2)
-
-        # Verificar cookies periódicamente
-        for i in range(5):
-            cookies = driver.get_cookies()
-            if cookies:
-                print(f"  Intento {i+1}: {len(cookies)} cookies encontradas")
-                break
-            time.sleep(2)
-
-        # Extraer cookies finales
-        cookies = driver.get_cookies()
-        print(f"\n[Result] Cookies obtenidas: {len(cookies)}")
-
-        if cookies:
-            cookie_names = [c.get('name', '') for c in cookies]
-            print(f"[Result] Nombres: {', '.join(cookie_names)}")
-
-        return cookies
-
-    except Exception as e:
-        print(f"[Flow] Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return driver.get_cookies()
+    return None
 
 
 def save_cookies_to_supabase(cookies):
     """Guarda las cookies en Supabase Storage"""
     from supabase import create_client
 
-    supabase_url = os.environ.get('SUPABASE_URL', '')
-    supabase_key = os.environ.get('SUPABASE_KEY', '')
-
-    if not supabase_url or not supabase_key:
+    if not SUPABASE_URL or not SUPABASE_KEY:
         print("[Supabase] ERROR: Variables no configuradas")
         return False
 
     try:
-        supabase = create_client(supabase_url, supabase_key)
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
         cookies_data = {
             "cookies": cookies,
             "timestamp": datetime.now().isoformat(),
-            "source": "github_actions"
+            "source": "scrapingbee"
         }
 
         cookies_json = json.dumps(cookies_data, indent=2).encode('utf-8')
@@ -489,54 +282,38 @@ def save_cookies_local(cookies, filename="cookies_colosseo.json"):
 def main():
     """Función principal"""
     print("=" * 60)
-    print("COLOSSEO AUTO-COOKIES")
+    print("COLOSSEO AUTO-COOKIES (ScrapingBee)")
     print(f"Timestamp: {datetime.now().isoformat()}")
     print("=" * 60)
 
-    proxy = get_proxy_config()
-    driver = None
-    success = False
-    cookies = []
+    if not SCRAPINGBEE_API_KEY:
+        print("[ERROR] SCRAPINGBEE_API_KEY no está configurada")
+        return 1
 
-    try:
-        driver = setup_driver_with_proxy(proxy)
+    print(f"[Config] API Key: {SCRAPINGBEE_API_KEY[:10]}...")
 
-        # Navegar a la página del tour
-        tour_url = "https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-palatino-gruppi/"
-        print(f"\n[Navigate] Abriendo: {tour_url}")
+    cookies = None
 
-        driver.get(tour_url)
-        time.sleep(random.uniform(3, 5))
+    # Intentar método con JS scenario primero
+    print("\n" + "=" * 40)
+    print("Método 1: Con interacción JavaScript")
+    print("=" * 40)
+    cookies = extract_cookies_from_page()
 
-        # Esperar a que pase Octofence
-        if not wait_for_page_load(driver, timeout=180):
-            print("[Failed] No se pudo pasar Octofence")
-        else:
-            print("[Success] Página del tour cargada")
+    # Si no funciona, intentar método simple
+    if not cookies:
+        print("\n" + "=" * 40)
+        print("Método 2: Carga simple")
+        print("=" * 40)
+        cookies = fetch_simple_page()
 
-            # Completar flujo de reserva
-            cookies = complete_booking_flow(driver)
+    # Guardar cookies si se obtuvieron
+    if cookies and len(cookies) > 0:
+        print(f"\n[SUCCESS] Cookies obtenidas: {len(cookies)}")
+        for c in cookies:
+            print(f"  - {c.get('name', 'unknown')}")
 
-            if cookies and len(cookies) > 0:
-                success = True
-                print(f"\n[Success] Cookies obtenidas: {len(cookies)}")
-
-    except Exception as e:
-        print(f"[Fatal] Error crítico: {e}")
-        import traceback
-        traceback.print_exc()
-
-    finally:
-        if driver:
-            try:
-                driver.quit()
-                print("[Driver] Cerrado")
-            except:
-                pass
-
-    # Guardar cookies
-    if success and cookies:
-        if os.environ.get('SUPABASE_URL'):
+        if SUPABASE_URL:
             save_cookies_to_supabase(cookies)
         save_cookies_local(cookies)
 
