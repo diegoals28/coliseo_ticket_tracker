@@ -48,3 +48,14 @@ jobs:
           path: cookies_colosseo.json
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Upload debug files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-files
+          path: |
+            debug_*.png
+            debug_*.html
+          retention-days: 3
+          if-no-files-found: ignore

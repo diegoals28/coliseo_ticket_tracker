@@ -136,7 +136,7 @@ def wait_for_element(driver, selectors, timeout=15, description="elemento"):
     return []
 
 
-def debug_page(driver, step_name):
+def debug_page(driver, step_name, save_html=False):
     """Muestra información de debug de la página actual"""
     print(f"\n[Debug {step_name}]")
     print(f"  URL: {driver.current_url}")
@@ -164,8 +164,36 @@ def debug_page(driver, step_name):
 
         plus_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-dir='up']")
         print(f"  Botones +: {len(plus_btns)}")
+
+        # Mostrar parte del HTML para debug
+        page_len = len(driver.page_source)
+        print(f"  HTML length: {page_len} chars")
+
+        # Buscar indicadores de contenido cargado
+        html_lower = driver.page_source.lower()
+        if "calendar" in html_lower:
+            print(f"  'calendar' encontrado en HTML")
+        if "tariff" in html_lower:
+            print(f"  'tariff' encontrado en HTML")
+        if "octofence" in html_lower or "waiting" in html_lower:
+            print(f"  ADVERTENCIA: Posible bloqueo Octofence en HTML")
+
     except Exception as e:
         print(f"  Error debug: {e}")
+
+    # Guardar screenshot y HTML si se solicita
+    if save_html:
+        try:
+            driver.save_screenshot(f"debug_{step_name}.png")
+            print(f"  Screenshot guardado: debug_{step_name}.png")
+        except:
+            pass
+        try:
+            with open(f"debug_{step_name}.html", "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
+            print(f"  HTML guardado: debug_{step_name}.html")
+        except:
+            pass
 
 
 def complete_booking_flow(driver):
@@ -185,15 +213,19 @@ def complete_booking_flow(driver):
     try:
         # Esperar a que cargue el contenido dinámico
         print("\n[Step 0] Esperando carga de contenido dinámico...")
-        time.sleep(8)
+        time.sleep(10)
 
         # Scroll para cargar contenido lazy
-        driver.execute_script("window.scrollTo(0, 300);")
-        time.sleep(2)
+        driver.execute_script("window.scrollTo(0, 500);")
+        time.sleep(3)
         driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(2)
+        time.sleep(3)
 
-        debug_page(driver, "inicial")
+        # Intentar activar JavaScript esperando más
+        driver.execute_script("return document.readyState")
+        time.sleep(5)
+
+        debug_page(driver, "inicial", save_html=True)
 
         # ============ PASO 1: Buscar y clickear en el calendario ============
         print("\n[Step 1] Buscando calendario y día disponible...")
