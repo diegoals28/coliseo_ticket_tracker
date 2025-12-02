@@ -1,7 +1,14 @@
 """
 Script para obtener cookies automáticamente del sitio del Colosseo.
 Diseñado para ejecutarse en GitHub Actions con soporte de proxy.
-Simula agregar un ticket al carrito y luego eliminarlo para generar cookies de sesión.
+
+Flujo:
+1. Entrar al sitio y pasar Octofence
+2. Seleccionar un tipo de tour
+3. Ver el calendario y entrar a un día disponible
+4. Escoger un horario
+5. Agregar al carrito una entrada
+6. Extraer cookies de sesión
 """
 
 import os
@@ -106,94 +113,252 @@ def wait_for_page_load(driver, timeout=180):
     return False
 
 
-def simulate_add_to_cart(driver):
+def debug_page(driver, step_name):
+    """Muestra información de debug de la página actual"""
+    print(f"\n[Debug {step_name}]")
+    print(f"  URL: {driver.current_url}")
+    print(f"  Title: {driver.title}")
+    cookies = driver.get_cookies()
+    print(f"  Cookies: {len(cookies)}")
+    if cookies:
+        names = [c.get('name', '')[:20] for c in cookies[:5]]
+        print(f"  Cookie names: {names}")
+
+
+def complete_booking_flow(driver):
     """
-    Simula el proceso de agregar al carrito y eliminar para generar cookies.
+    Completa el flujo de reserva para generar cookies de sesión:
+    1. Seleccionar tipo de tour
+    2. Ver calendario
+    3. Seleccionar día
+    4. Seleccionar horario
+    5. Agregar al carrito
     """
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 
-    print("[Cart] Iniciando simulación de carrito...")
+    print("\n[Flow] Iniciando flujo de reserva...")
 
     try:
-        # Esperar a que cargue el calendario
-        print("[Cart] Esperando calendario...")
+        # ============ PASO 1: Seleccionar tipo de tour ============
+        print("\n[Step 1] Buscando tipos de tour/entradas...")
+        time.sleep(3)
+
+        # Buscar opciones de tour/entrada
+        tour_selectors = [
+            ".ticket-type", ".tour-option", ".product-item",
+            "[class*='ticket']", "[class*='tour']", "[class*='product']",
+            ".entrance-type", ".visit-type", "input[type='radio']",
+            ".card", ".option", "button[class*='select']",
+            "a[href*='ticket']", "a[href*='tour']"
+        ]
+
+        tour_found = False
+        for selector in tour_selectors:
+            try:
+                elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                if elements:
+                    print(f"  Encontrados {len(elements)} elementos con '{selector}'")
+                    # Intentar hacer clic en el primero que sea visible
+                    for elem in elements[:3]:
+                        try:
+                            if elem.is_displayed():
+                                driver.execute_script("arguments[0].scrollIntoView(true);", elem)
+                                time.sleep(1)
+                                driver.execute_script("arguments[0].click();", elem)
+                                print(f"  Click en elemento de tour")
+                                tour_found = True
+                                time.sleep(3)
+                                break
+                        except:
+                            continue
+                    if tour_found:
+                        break
+            except:
+                continue
+
+        debug_page(driver, "después de tour")
+
+        # ============ PASO 2: Ver calendario y seleccionar día ============
+        print("\n[Step 2] Buscando calendario y día disponible...")
+        time.sleep(3)
+
+        # Buscar días en el calendario
+        day_selectors = [
+            "td.available", "td[class*='available']",
+            ".day.available", ".day[class*='available']",
+            ".calendar-day:not(.disabled)", "[data-date]:not(.disabled)",
+            ".fc-day:not(.fc-day-disabled)", "td:not(.disabled) a",
+            ".datepicker td:not(.disabled)", "[class*='selectable']"
+        ]
+
+        day_found = False
+        for selector in day_selectors:
+            try:
+                days = driver.find_elements(By.CSS_SELECTOR, selector)
+                if days:
+                    print(f"  Encontrados {len(days)} días con '{selector}'")
+                    for day in days:
+                        try:
+                            text = day.text.strip()
+                            if text and text.isdigit() and int(text) > 0:
+                                driver.execute_script("arguments[0].scrollIntoView(true);", day)
+                                time.sleep(1)
+                                driver.execute_script("arguments[0].click();", day)
+                                print(f"  Click en día: {text}")
+                                day_found = True
+                                time.sleep(3)
+                                break
+                        except:
+                            continue
+                    if day_found:
+                        break
+            except:
+                continue
+
+        if not day_found:
+            # Intentar buscar cualquier elemento clickeable en el calendario
+            print("  Intentando método alternativo para calendario...")
+            try:
+                calendar = driver.find_element(By.CSS_SELECTOR, ".calendar, .datepicker, [class*='calendar']")
+                clickable = calendar.find_elements(By.CSS_SELECTOR, "td, .day, a")
+                for elem in clickable:
+                    try:
+                        if elem.is_displayed() and elem.text.strip():
+                            driver.execute_script("arguments[0].click();", elem)
+                            print(f"  Click alternativo en: {elem.text.strip()[:10]}")
+                            time.sleep(3)
+                            break
+                    except:
+                        continue
+            except:
+                pass
+
+        debug_page(driver, "después de día")
+
+        # ============ PASO 3: Seleccionar horario ============
+        print("\n[Step 3] Buscando horarios disponibles...")
+        time.sleep(3)
+
+        time_selectors = [
+            ".time-slot", ".timeslot", "[class*='time']",
+            ".hour", ".schedule", "input[type='radio'][name*='time']",
+            "button[class*='time']", "a[class*='time']",
+            ".slot", "[class*='slot']", "[class*='hour']"
+        ]
+
+        time_found = False
+        for selector in time_selectors:
+            try:
+                times = driver.find_elements(By.CSS_SELECTOR, selector)
+                if times:
+                    print(f"  Encontrados {len(times)} horarios con '{selector}'")
+                    for t in times:
+                        try:
+                            if t.is_displayed():
+                                driver.execute_script("arguments[0].scrollIntoView(true);", t)
+                                time.sleep(1)
+                                driver.execute_script("arguments[0].click();", t)
+                                print(f"  Click en horario: {t.text.strip()[:20]}")
+                                time_found = True
+                                time.sleep(3)
+                                break
+                        except:
+                            continue
+                    if time_found:
+                        break
+            except:
+                continue
+
+        debug_page(driver, "después de horario")
+
+        # ============ PASO 4: Agregar al carrito ============
+        print("\n[Step 4] Buscando botón de agregar al carrito...")
+        time.sleep(2)
+
+        # Primero, buscar selector de cantidad si existe
+        qty_selectors = [
+            "input[type='number']", "select[class*='qty']",
+            ".quantity input", "[class*='quantity'] input",
+            "input[name*='qty']", "input[name*='quantity']"
+        ]
+
+        for selector in qty_selectors:
+            try:
+                qty_inputs = driver.find_elements(By.CSS_SELECTOR, selector)
+                for qty in qty_inputs:
+                    if qty.is_displayed():
+                        qty.clear()
+                        qty.send_keys("1")
+                        print(f"  Cantidad establecida a 1")
+                        time.sleep(1)
+                        break
+            except:
+                continue
+
+        # Buscar botón de agregar
+        add_selectors = [
+            "button[class*='add']", "button[class*='cart']",
+            "input[type='submit']", "button[type='submit']",
+            ".add-to-cart", ".btn-add", "[class*='aggiungi']",
+            "[class*='prenota']", "[class*='book']", "[class*='compra']",
+            "button.btn-primary", "button.btn", "a.btn[href*='cart']"
+        ]
+
+        add_found = False
+        for selector in add_selectors:
+            try:
+                buttons = driver.find_elements(By.CSS_SELECTOR, selector)
+                if buttons:
+                    print(f"  Encontrados {len(buttons)} botones con '{selector}'")
+                    for btn in buttons:
+                        try:
+                            if btn.is_displayed():
+                                btn_text = btn.text.strip().lower()
+                                # Evitar botones de cancelar/cerrar
+                                if any(x in btn_text for x in ['cancel', 'close', 'cerrar', 'annulla']):
+                                    continue
+                                driver.execute_script("arguments[0].scrollIntoView(true);", btn)
+                                time.sleep(1)
+                                driver.execute_script("arguments[0].click();", btn)
+                                print(f"  Click en botón: {btn.text.strip()[:30]}")
+                                add_found = True
+                                time.sleep(5)
+                                break
+                        except:
+                            continue
+                    if add_found:
+                        break
+            except:
+                continue
+
+        debug_page(driver, "después de agregar")
+
+        # ============ PASO 5: Esperar y extraer cookies ============
+        print("\n[Step 5] Esperando generación de cookies...")
         time.sleep(5)
 
-        # Buscar y hacer clic en una fecha disponible del calendario
-        try:
-            # Buscar días disponibles (generalmente tienen clase específica)
-            available_days = driver.find_elements(By.CSS_SELECTOR, ".calendar-day.available, .day-available, td.available, .fc-day:not(.fc-day-disabled)")
-
-            if not available_days:
-                # Intentar encontrar cualquier día clickeable
-                available_days = driver.find_elements(By.CSS_SELECTOR, "[data-date], .calendar td[class*='avail']")
-
-            if available_days:
-                # Hacer clic en el primer día disponible
-                day = available_days[0]
-                print(f"[Cart] Encontrado día disponible, haciendo clic...")
-                driver.execute_script("arguments[0].click();", day)
-                time.sleep(3)
-            else:
-                print("[Cart] No se encontraron días disponibles en el calendario")
-        except Exception as e:
-            print(f"[Cart] Error buscando calendario: {e}")
-
-        # Buscar botón de agregar al carrito
-        print("[Cart] Buscando botón de agregar...")
-        add_buttons = driver.find_elements(By.CSS_SELECTOR,
-            "button[class*='add'], button[class*='cart'], .add-to-cart, .btn-add, "
-            "input[type='submit'][value*='Add'], button[type='submit'], "
-            "[class*='aggiungi'], [class*='prenota']"
-        )
-
-        if add_buttons:
-            print(f"[Cart] Encontrados {len(add_buttons)} botones, intentando clic...")
-            for btn in add_buttons[:3]:
-                try:
-                    driver.execute_script("arguments[0].click();", btn)
-                    time.sleep(2)
-                    break
-                except:
-                    continue
-
-        # Esperar un momento para que se generen las cookies
-        print("[Cart] Esperando generación de cookies de sesión...")
-        time.sleep(5)
-
-        # Hacer scroll y otras interacciones
+        # Hacer algunas interacciones adicionales
         driver.execute_script("window.scrollTo(0, 500);")
         time.sleep(2)
         driver.execute_script("window.scrollTo(0, 0);")
         time.sleep(2)
 
-        # Extraer cookies
+        # Extraer cookies finales
         cookies = driver.get_cookies()
-        print(f"[Cart] Cookies obtenidas: {len(cookies)}")
+        print(f"\n[Result] Cookies obtenidas: {len(cookies)}")
 
-        # Mostrar las cookies encontradas
         if cookies:
             cookie_names = [c.get('name', '') for c in cookies]
-            print(f"[Cart] Nombres: {', '.join(cookie_names)}")
-
-        # Intentar limpiar el carrito (opcional, para no dejar items)
-        try:
-            remove_buttons = driver.find_elements(By.CSS_SELECTOR,
-                ".remove, .delete, [class*='remove'], [class*='delete'], .cart-remove"
-            )
-            for btn in remove_buttons[:1]:
-                driver.execute_script("arguments[0].click();", btn)
-                time.sleep(1)
-        except:
-            pass
+            print(f"[Result] Nombres: {', '.join(cookie_names)}")
 
         return cookies
 
     except Exception as e:
-        print(f"[Cart] Error en simulación: {e}")
-        # Aún así intentar obtener cookies
+        print(f"[Flow] Error: {e}")
+        import traceback
+        traceback.print_exc()
         return driver.get_cookies()
 
 
@@ -291,10 +456,9 @@ def main():
             print("[Failed] No se pudo pasar Octofence")
         else:
             print("[Success] Página del tour cargada")
-            time.sleep(3)
 
-            # Simular agregar al carrito para generar cookies
-            cookies = simulate_add_to_cart(driver)
+            # Completar flujo de reserva
+            cookies = complete_booking_flow(driver)
 
             if cookies and len(cookies) > 0:
                 success = True
