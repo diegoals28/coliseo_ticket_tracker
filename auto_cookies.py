@@ -147,6 +147,35 @@ def wait_for_page_load(driver, timeout=180):
     return False
 
 
+def wait_for_cookies(driver, timeout=30):
+    """
+    Espera a que se generen cookies en el navegador.
+
+    Returns:
+        Lista de cookies o lista vacía
+    """
+    print(f"[Cookies] Esperando generación de cookies...")
+
+    start_time = time.time()
+
+    while time.time() - start_time < timeout:
+        cookies = driver.get_cookies()
+        if cookies and len(cookies) > 0:
+            print(f"[Cookies] Encontradas {len(cookies)} cookies")
+            return cookies
+
+        # Hacer scroll para activar JavaScript
+        try:
+            driver.execute_script("window.scrollBy(0, 300);")
+        except:
+            pass
+
+        time.sleep(2)
+
+    print("[Cookies] No se generaron cookies en el tiempo esperado")
+    return []
+
+
 def extract_cookies(driver):
     """Extrae cookies del navegador"""
     cookies = driver.get_cookies()
@@ -261,19 +290,44 @@ def main():
                 driver.get(url)
 
                 # Simular comportamiento humano
-                time.sleep(random.uniform(2, 4))
+                time.sleep(random.uniform(3, 5))
 
                 # Esperar a que pase Octofence
                 if wait_for_page_load(driver, timeout=180):
-                    # Extraer cookies
-                    cookies = extract_cookies(driver)
+                    # Esperar un poco más para que JS genere cookies
+                    print("[Wait] Esperando generación de cookies por JavaScript...")
+                    time.sleep(5)
+
+                    # Hacer algunas interacciones para activar cookies
+                    try:
+                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 2);")
+                        time.sleep(2)
+                        driver.execute_script("window.scrollTo(0, 0);")
+                        time.sleep(2)
+                    except:
+                        pass
+
+                    # Esperar y extraer cookies
+                    cookies = wait_for_cookies(driver, timeout=30)
+
+                    if not cookies:
+                        # Intentar extraer directamente
+                        cookies = extract_cookies(driver)
 
                     if cookies and len(cookies) > 0:
                         success = True
                         print(f"[Success] Cookies obtenidas: {len(cookies)}")
+
+                        # Mostrar nombres de cookies para debug
+                        cookie_names = [c.get('name', 'unknown') for c in cookies]
+                        print(f"[Debug] Cookies: {', '.join(cookie_names[:10])}")
                         break
                     else:
                         print("[Warning] Página cargada pero sin cookies útiles")
+
+                        # Debug: mostrar info de la página
+                        print(f"[Debug] URL actual: {driver.current_url}")
+                        print(f"[Debug] Título: {driver.title}")
                 else:
                     print(f"[Failed] No se pudo cargar: {url}")
 
