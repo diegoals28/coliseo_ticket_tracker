@@ -134,12 +134,17 @@ def extract_cookies_from_page():
         print("[Warning] Posible bloqueo de Octofence")
 
     if cookies:
-        print(f"[Success] Cookies obtenidas: {list(cookies.keys())}")
-        cookies_list = [
-            {'name': k, 'value': v, 'domain': '.colosseo.it'}
-            for k, v in cookies.items()
-        ]
-        return cookies_list
+        # Convertir a lista si es diccionario
+        if isinstance(cookies, dict):
+            print(f"[Success] Cookies obtenidas: {list(cookies.keys())}")
+            cookies_list = [
+                {'name': k, 'value': v, 'domain': '.colosseo.it'}
+                for k, v in cookies.items()
+            ]
+            return cookies_list
+        elif isinstance(cookies, list):
+            print(f"[Success] Cookies obtenidas: {len(cookies)}")
+            return cookies
 
     print("[Info] No se encontraron cookies en respuesta")
     return None
