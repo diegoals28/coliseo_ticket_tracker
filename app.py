@@ -876,17 +876,19 @@ def descargar_historico():
     Descarga el archivo histórico desde Supabase o local.
 
     Returns:
-        Archivo Excel o JSON con URL
+        Archivo Excel directamente
     """
     try:
         if storage_client.is_configured():
-            # Obtener URL desde Supabase
-            result = storage_client.get_historico_url()
+            # Descargar archivo desde Supabase
+            result = storage_client.download_file('historico/historico_disponibilidad.xlsx')
             if result['success']:
-                return jsonify({
-                    "success": True,
-                    "url": result['url']
-                })
+                return send_file(
+                    BytesIO(result['data']),
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    as_attachment=True,
+                    download_name='historico_disponibilidad.xlsx'
+                )
             else:
                 return jsonify({"error": "Archivo no encontrado en la nube"}), 404
         else:

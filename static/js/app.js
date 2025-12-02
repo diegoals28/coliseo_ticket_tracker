@@ -1,5 +1,38 @@
 // Estado global
 let currentResults = null;
+let cookiesLoaded = false;
+
+// Auto-cargar cookies de Supabase al iniciar
+document.addEventListener('DOMContentLoaded', async function() {
+    await cargarCookiesAutomaticas();
+});
+
+// Cargar cookies automáticas desde Supabase
+async function cargarCookiesAutomaticas() {
+    try {
+        console.log('[Auto] Cargando cookies desde Supabase...');
+        const response = await fetch('/api/cookies/auto');
+        const data = await response.json();
+
+        if (data.success && data.cookies) {
+            document.getElementById('cookiesInput').value = data.cookies;
+            cookiesLoaded = true;
+
+            const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'desconocido';
+            showAlert('success', `Cookies cargadas automaticamente (${data.count} cookies, actualizadas: ${timestamp})`);
+
+            // Auto-consultar disponibilidad
+            setTimeout(() => {
+                consultarDisponibilidad();
+            }, 1000);
+        } else {
+            console.log('[Auto] No hay cookies en Supabase:', data.error);
+            showAlert('error', 'No hay cookies automaticas disponibles. Por favor, pega las cookies manualmente.');
+        }
+    } catch (error) {
+        console.error('[Auto] Error cargando cookies:', error);
+    }
+}
 
 // Mostrar alertas
 function showAlert(type, message) {
@@ -301,52 +334,41 @@ function generarTablaFechas(tourData) {
     // Crear ID único para el tour
     const tourId = tourData.guid.substring(0, 8);
 
-    let html = `
-        <div class="table-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Fecha</th>
-                        <th>Día</th>
-                        <th>Plazas Disponibles</th>
-                        <th>% Ocupado</th>
-                        <th>Estado</th>
-                        <th>Horarios</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
+    let html = '';
 
     for (const fecha of tourData.fechas) {
         const timeslots = tourData.timeslots_por_fecha[fecha.fecha] || [];
         // ID único: tour_fecha (ej: a9a4b0f8_2025_11_25)
         const fechaId = tourId + '_' + fecha.fecha.replace(/[^a-z0-9]/gi, '_');
-        console.log(`Fecha ${fecha.fecha}: ${timeslots.length} timeslots`);
 
         html += `
-            <tr class="expandable-row" onclick="toggleTimeslots('${fechaId}')">
-                <td>${fecha.fecha}</td>
-                <td>${fecha.dia_semana}</td>
-                <td><strong>${fecha.plazas_disponibles.toLocaleString()}</strong> / ${fecha.plazas_totales.toLocaleString()}</td>
-                <td>${fecha.porcentaje_ocupado}%</td>
-                <td><span class="badge badge-${fecha.nivel}">${fecha.estado}</span></td>
-                <td class="expand-hint">${ICONS.chevronDown} ${timeslots.length} horarios</td>
-            </tr>
-            <tr>
-                <td colspan="6" class="timeslots-detail" id="timeslots_${fechaId}">
-                    ${generarTimeslotsGrid(timeslots)}
-                </td>
-            </tr>
+            <div class="fecha-row" onclick="toggleTimeslots('${fechaId}')">
+                <div class="fecha-cell fecha-fecha">${fecha.fecha}</div>
+                <div class="fecha-cell fecha-dia">${fecha.dia_semana}</div>
+                <div class="fecha-cell fecha-plazas"><strong>${fecha.plazas_disponibles.toLocaleString()}</strong> / ${fecha.plazas_totales.toLocaleString()}</div>
+                <div class="fecha-cell fecha-ocupado">${fecha.porcentaje_ocupado}%</div>
+                <div class="fecha-cell fecha-estado"><span class="badge badge-${fecha.nivel}">${fecha.estado}</span></div>
+                <div class="fecha-cell fecha-horarios expand-hint">${ICONS.chevronDown} ${timeslots.length} horarios</div>
+            </div>
+            <div class="timeslots-panel" id="timeslots_${fechaId}">
+                ${generarTimeslotsGrid(timeslots)}
+            </div>
         `;
     }
 
-    html += `
-                </tbody>
-            </table>
+    return `
+        <div class="fechas-container">
+            <div class="fechas-header">
+                <div class="fecha-cell fecha-fecha">Fecha</div>
+                <div class="fecha-cell fecha-dia">Día</div>
+                <div class="fecha-cell fecha-plazas">Plazas Disponibles</div>
+                <div class="fecha-cell fecha-ocupado">% Ocupado</div>
+                <div class="fecha-cell fecha-estado">Estado</div>
+                <div class="fecha-cell fecha-horarios">Horarios</div>
+            </div>
+            ${html}
         </div>
     `;
-
-    return html;
 }
 
 // Generar grid de timeslots
@@ -430,8 +452,8 @@ function generarEstadisticas(stats) {
 
 // Toggle timeslots visibility
 function toggleTimeslots(fechaId) {
-    const element = document.getElementById('timeslots_' + fechaId);
-    element.classList.toggle('active');
+    const panel = document.getElementById('timeslots_' + fechaId);
+    panel.classList.toggle('active');
 }
 
 // Cambiar tab
@@ -485,6 +507,35 @@ async function exportarExcel() {
     }
 }
 
+// Descargar histórico desde Supabase
+async function descargarHistorico() {
+    try {
+        showAlert('success', 'Descargando historico...');
+
+        const response = await fetch('/api/descargar-historico');
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Error al descargar');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `historico_disponibilidad_${new Date().toISOString().split('T')[0]}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showAlert('success', 'Historico descargado correctamente');
+
+    } catch (error) {
+        showAlert('error', 'Error al descargar historico: ' + error.message);
+    }
+}
+
 // Exponer funciones globalmente para que funcionen con onclick en HTML
 window.convertirCookiesTabla = convertirCookiesTabla;
 window.cargarCookiesArchivo = cargarCookiesArchivo;
@@ -493,3 +544,5 @@ window.consultarDisponibilidad = consultarDisponibilidad;
 window.toggleTimeslots = toggleTimeslots;
 window.cambiarTab = cambiarTab;
 window.exportarExcel = exportarExcel;
+window.descargarHistorico = descargarHistorico;
+window.cargarCookiesAutomaticas = cargarCookiesAutomaticas;
