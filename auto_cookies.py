@@ -101,45 +101,46 @@ def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None):
 
 def extract_cookies_with_cart_flow():
     """
-    Extrae cookies completando el flujo de reserva:
-    1. Cargar página
-    2. Seleccionar día en calendario
-    3. Seleccionar horario
-    4. Incrementar cantidad
-    5. Agregar al carrito
+    Extrae cookies completando el flujo de reserva con un solo evaluate
+    que ejecuta todo el flujo de una vez.
     """
     print("\n[Flow] Ejecutando flujo completo de reserva...")
 
-    # JS Scenario para completar el flujo de reserva
-    # Usar evaluate para ejecutar JavaScript directamente y manejar mejor los elementos
+    # Un solo evaluate que hace todo el flujo secuencialmente
     js_scenario = {
         "instructions": [
-            # Esperar carga inicial más larga
-            {"wait": 12000},
-
-            # Usar evaluate para click en calendario (más robusto)
-            {"evaluate": "document.querySelector('.ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a')?.click()"},
             {"wait": 5000},
+            # Ejecutar todo el flujo en un solo script
+            {"evaluate": """
+                (async function() {
+                    // Click en día disponible
+                    const day = document.querySelector('.ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a');
+                    if (day) day.click();
+                    await new Promise(r => setTimeout(r, 3000));
 
-            # Usar evaluate para seleccionar horario
-            {"evaluate": "document.querySelector('input[name=\"slot\"]')?.click()"},
-            {"wait": 4000},
+                    // Click en horario
+                    const slot = document.querySelector('input[name="slot"]');
+                    if (slot) slot.click();
+                    await new Promise(r => setTimeout(r, 2000));
 
-            # Usar evaluate para incrementar cantidad
-            {"evaluate": "document.querySelector('button[data-dir=\"up\"]')?.click()"},
-            {"wait": 2000},
+                    // Click en + dos veces
+                    const plus = document.querySelector('button[data-dir="up"]');
+                    if (plus) { plus.click(); await new Promise(r => setTimeout(r, 500)); plus.click(); }
+                    await new Promise(r => setTimeout(r, 2000));
 
-            # Incrementar de nuevo
-            {"evaluate": "document.querySelector('button[data-dir=\"up\"]')?.click()"},
-            {"wait": 2000},
+                    // Submit
+                    const submit = document.querySelector('button[type="submit"]');
+                    if (submit) submit.click();
+                    await new Promise(r => setTimeout(r, 5000));
 
-            # Usar evaluate para submit
-            {"evaluate": "document.querySelector('form button[type=\"submit\"], .btn-primary, .add-to-cart')?.click()"},
-            {"wait": 10000},
+                    return 'done';
+                })();
+            """},
+            {"wait": 3000},
         ]
     }
 
-    result = fetch_with_scrapingbee(TOUR_URL, wait_time=15000, js_scenario=js_scenario)
+    result = fetch_with_scrapingbee(TOUR_URL, wait_time=8000, js_scenario=js_scenario)
 
     if not result['success']:
         print(f"[Error] {result.get('error', 'Unknown error')}")
