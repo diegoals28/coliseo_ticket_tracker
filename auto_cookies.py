@@ -111,35 +111,35 @@ def extract_cookies_with_cart_flow():
     print("\n[Flow] Ejecutando flujo completo de reserva...")
 
     # JS Scenario para completar el flujo de reserva
-    # Documentación: https://www.scrapingbee.com/documentation/javascript-scenario/
+    # Usar evaluate para ejecutar JavaScript directamente y manejar mejor los elementos
     js_scenario = {
         "instructions": [
-            # Esperar carga inicial
-            {"wait": 8000},
+            # Esperar carga inicial más larga
+            {"wait": 12000},
 
-            # Click en primer día disponible del calendario (jQuery UI Datepicker)
-            {"click": "td[data-handler='selectDay'] a.ui-state-default"},
+            # Usar evaluate para click en calendario (más robusto)
+            {"evaluate": "document.querySelector('.ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a')?.click()"},
             {"wait": 5000},
 
-            # Click en primer horario disponible (radio button)
-            {"click": "input[type='radio'][name='slot']"},
-            {"wait": 3000},
+            # Usar evaluate para seleccionar horario
+            {"evaluate": "document.querySelector('input[name=\"slot\"]')?.click()"},
+            {"wait": 4000},
 
-            # Click en botón + para incrementar cantidad
-            {"click": "button[data-dir='up']"},
+            # Usar evaluate para incrementar cantidad
+            {"evaluate": "document.querySelector('button[data-dir=\"up\"]')?.click()"},
             {"wait": 2000},
 
-            # Click otra vez en + para asegurar al menos 1
-            {"click": "button[data-dir='up']"},
+            # Incrementar de nuevo
+            {"evaluate": "document.querySelector('button[data-dir=\"up\"]')?.click()"},
             {"wait": 2000},
 
-            # Click en agregar al carrito
-            {"click": "button[type='submit']"},
-            {"wait": 8000},
+            # Usar evaluate para submit
+            {"evaluate": "document.querySelector('form button[type=\"submit\"], .btn-primary, .add-to-cart')?.click()"},
+            {"wait": 10000},
         ]
     }
 
-    result = fetch_with_scrapingbee(TOUR_URL, wait_time=10000, js_scenario=js_scenario)
+    result = fetch_with_scrapingbee(TOUR_URL, wait_time=15000, js_scenario=js_scenario)
 
     if not result['success']:
         print(f"[Error] {result.get('error', 'Unknown error')}")
