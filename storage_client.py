@@ -150,3 +150,88 @@ def get_historico_url() -> dict:
 def is_configured() -> bool:
     """Verifica si Supabase está configurado"""
     return bool(SUPABASE_URL and SUPABASE_KEY)
+
+
+def get_auto_cookies() -> dict:
+    """
+    Obtiene las cookies automáticas guardadas por GitHub Actions.
+
+    Returns:
+        dict con 'success', 'cookies', 'timestamp' o 'error'
+    """
+    try:
+        if not is_configured():
+            return {'success': False, 'error': 'Supabase no configurado'}
+
+        supabase = get_supabase_client()
+
+        # Descargar archivo de cookies
+        path = 'cookies/cookies_auto.json'
+
+        try:
+            result = supabase.storage.from_(BUCKET_NAME).download(path)
+
+            import json
+            data = json.loads(result.decode('utf-8'))
+
+            return {
+                'success': True,
+                'cookies': data.get('cookies', []),
+                'timestamp': data.get('timestamp', ''),
+                'source': data.get('source', 'unknown')
+            }
+
+        except Exception as e:
+            return {'success': False, 'error': f'Archivo no encontrado: {str(e)}'}
+
+    except Exception as e:
+        return {'success': False, 'error': f'Error obteniendo cookies: {str(e)}'}
+
+
+def save_auto_cookies(cookies: list) -> dict:
+    """
+    Guarda cookies en Supabase Storage.
+
+    Args:
+        cookies: Lista de cookies
+
+    Returns:
+        dict con 'success' o 'error'
+    """
+    try:
+        if not is_configured():
+            return {'success': False, 'error': 'Supabase no configurado'}
+
+        import json
+        from datetime import datetime
+
+        supabase = get_supabase_client()
+        ensure_bucket_exists(supabase)
+
+        cookies_data = {
+            "cookies": cookies,
+            "timestamp": datetime.now().isoformat(),
+            "source": "web_app"
+        }
+
+        cookies_json = json.dumps(cookies_data, indent=2).encode('utf-8')
+
+        path = 'cookies/cookies_auto.json'
+
+        # Eliminar archivo anterior
+        try:
+            supabase.storage.from_(BUCKET_NAME).remove([path])
+        except:
+            pass
+
+        # Subir nuevo archivo
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path,
+            cookies_json,
+            file_options={"content-type": "application/json", "upsert": "true"}
+        )
+
+        return {'success': True, 'message': 'Cookies guardadas en Supabase'}
+
+    except Exception as e:
+        return {'success': False, 'error': f'Error guardando cookies: {str(e)}'}

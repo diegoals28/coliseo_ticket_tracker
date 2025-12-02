@@ -1,0 +1,50 @@
+name: Auto Cookies Refresh
+
+on:
+  # Ejecutar cada 6 horas
+  schedule:
+    - cron: '0 */6 * * *'
+
+  # Permitir ejecución manual
+  workflow_dispatch:
+
+jobs:
+  refresh-cookies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install selenium undetected-chromedriver supabase python-dotenv
+
+      - name: Run auto-cookies script
+        env:
+          PROXY_LIST: ${{ secrets.PROXY_LIST }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python auto_cookies.py
+
+      - name: Upload cookies artifact (backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cookies-backup
+          path: cookies_colosseo.json
+          retention-days: 7
+          if-no-files-found: ignore

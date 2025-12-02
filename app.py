@@ -487,6 +487,111 @@ def cargar_cookies_archivo():
         return jsonify({"error": f"Error al cargar cookies: {str(e)}"}), 500
 
 
+@app.route('/api/cookies/auto', methods=['GET'])
+def get_auto_cookies():
+    """
+    Obtiene cookies automáticas desde Supabase (guardadas por GitHub Actions).
+
+    Returns:
+        JSON con cookies y metadata
+    """
+    try:
+        result = storage_client.get_auto_cookies()
+
+        if result['success']:
+            return jsonify({
+                "success": True,
+                "cookies": json.dumps(result['cookies'], indent=2),
+                "timestamp": result.get('timestamp', ''),
+                "source": result.get('source', 'unknown'),
+                "count": len(result['cookies'])
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": result.get('error', 'Error desconocido')
+            }), 404
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
+@app.route('/api/cookies/sync', methods=['POST'])
+def sync_cookies_to_cloud():
+    """
+    Sincroniza cookies locales/manuales a Supabase para compartir entre instancias.
+
+    Returns:
+        JSON con resultado
+    """
+    try:
+        data = request.json
+        cookies_json = data.get('cookies')
+
+        if not cookies_json:
+            return jsonify({"error": "No se proporcionaron cookies"}), 400
+
+        try:
+            cookies = json.loads(cookies_json)
+        except json.JSONDecodeError:
+            return jsonify({"error": "Formato de cookies inválido"}), 400
+
+        result = storage_client.save_auto_cookies(cookies)
+
+        if result['success']:
+            return jsonify({
+                "success": True,
+                "message": f"Cookies sincronizadas a la nube ({len(cookies)} cookies)"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": result.get('error', 'Error al sincronizar')
+            }), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
+@app.route('/api/cookies/status', methods=['GET'])
+def cookies_status():
+    """
+    Verifica el estado de las cookies (locales y cloud).
+
+    Returns:
+        JSON con estado de cookies
+    """
+    try:
+        status = {
+            "local": {"available": False, "count": 0},
+            "cloud": {"available": False, "count": 0, "timestamp": None},
+            "supabase_configured": storage_client.is_configured()
+        }
+
+        # Verificar cookies locales
+        try:
+            client = ColosseoAPIClient()
+            if client.load_cookies():
+                status["local"]["available"] = True
+                status["local"]["count"] = len(client.cookies)
+        except:
+            pass
+
+        # Verificar cookies en cloud
+        if storage_client.is_configured():
+            result = storage_client.get_auto_cookies()
+            if result['success']:
+                status["cloud"]["available"] = True
+                status["cloud"]["count"] = len(result.get('cookies', []))
+                status["cloud"]["timestamp"] = result.get('timestamp')
+                status["cloud"]["source"] = result.get('source')
+
+        return jsonify(status)
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
 @app.route('/api/guardar-cookies', methods=['POST'])
 def guardar_cookies():
     """
