@@ -1,6 +1,7 @@
 """
 Módulo de navegador stealth con técnicas avanzadas anti-detección.
 Diseñado específicamente para evadir Octofence y otros sistemas anti-bot.
+Soporta rotación de proxies para evitar bloqueos por IP.
 """
 
 import time
@@ -9,6 +10,7 @@ import signal
 from threading import Event
 from typing import Optional, Tuple
 from colosseo_config import config
+from proxy_manager import ProxyManager
 
 # Control de parada global
 stop_event = Event()
@@ -106,9 +108,12 @@ class StealthBrowser:
     """
 
     @staticmethod
-    def create_undetected_driver():
+    def create_undetected_driver(proxy: str = None):
         """
         Crea un driver usando undetected-chromedriver (método más efectivo).
+
+        Args:
+            proxy: Proxy a usar en formato host:port o user:pass@host:port
 
         Returns:
             Driver de Chrome o None si falla
@@ -116,12 +121,19 @@ class StealthBrowser:
         if not UNDETECTED_AVAILABLE:
             return None
 
-        print("🔧 Iniciando navegador anti-detección...")
+        print("Iniciando navegador anti-detección...")
 
         options = uc.ChromeOptions()
         options.add_argument("--start-maximized")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument(f"--user-agent={config.USER_AGENT}")
+
+        # Configurar proxy si se proporciona
+        if proxy:
+            # Limpiar formato de URL si viene con protocolo
+            proxy_clean = proxy.replace("http://", "").replace("https://", "")
+            options.add_argument(f"--proxy-server=http://{proxy_clean}")
+            print(f"[Proxy] Configurado para navegador: {proxy_clean[:30]}...")
 
         # Deshabilitar características que delatan automatización
         prefs = {
@@ -147,9 +159,12 @@ class StealthBrowser:
             return None
 
     @staticmethod
-    def create_stealth_driver_fallback():
+    def create_stealth_driver_fallback(proxy: str = None):
         """
         Método alternativo usando Selenium estándar con técnicas avanzadas.
+
+        Args:
+            proxy: Proxy a usar en formato host:port o user:pass@host:port
 
         Returns:
             Driver de Chrome
@@ -157,7 +172,7 @@ class StealthBrowser:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
 
-        print("🔧 Iniciando navegador con método alternativo...")
+        print("Iniciando navegador con método alternativo...")
 
         options = Options()
         options.add_argument("--start-maximized")
@@ -175,6 +190,12 @@ class StealthBrowser:
         options.add_argument("--ignore-certificate-errors")
         options.add_argument("--disable-plugins-discovery")
         options.add_argument("--incognito")
+
+        # Configurar proxy si se proporciona
+        if proxy:
+            proxy_clean = proxy.replace("http://", "").replace("https://", "")
+            options.add_argument(f"--proxy-server=http://{proxy_clean}")
+            print(f"[Proxy] Configurado para navegador: {proxy_clean[:30]}...")
 
         if config.HEADLESS:
             options.add_argument("--headless=new")
@@ -199,20 +220,36 @@ class StealthBrowser:
         return driver
 
     @staticmethod
-    def create_driver():
+    def create_driver(proxy: str = None, use_proxy_manager: bool = None):
         """
         Crea un driver con la mejor técnica disponible.
+
+        Args:
+            proxy: Proxy específico a usar (opcional)
+            use_proxy_manager: Si usar ProxyManager para obtener proxy automáticamente
 
         Returns:
             Driver de Chrome o None si falla
         """
+        # Determinar si usar proxy manager
+        use_proxy_manager = use_proxy_manager if use_proxy_manager is not None else config.PROXY_ENABLED
+
+        # Obtener proxy del manager si está habilitado y no se proporcionó uno específico
+        if not proxy and use_proxy_manager:
+            pm = ProxyManager(
+                proxy_file=config.PROXY_FILE,
+                rotation_mode=config.PROXY_ROTATION_MODE
+            )
+            if pm.enabled:
+                proxy = pm.get_proxy_for_selenium()
+
         driver = None
 
         if UNDETECTED_AVAILABLE:
-            driver = StealthBrowser.create_undetected_driver()
+            driver = StealthBrowser.create_undetected_driver(proxy=proxy)
 
         if not driver:
-            driver = StealthBrowser.create_stealth_driver_fallback()
+            driver = StealthBrowser.create_stealth_driver_fallback(proxy=proxy)
 
         return driver
 
@@ -340,11 +377,15 @@ class StealthBrowser:
 
 
 # Función de conveniencia para uso rápido
-def create_stealth_browser():
+def create_stealth_browser(proxy: str = None, use_proxy_manager: bool = None):
     """
     Crea y retorna un navegador stealth listo para usar.
+
+    Args:
+        proxy: Proxy específico a usar (opcional)
+        use_proxy_manager: Si usar ProxyManager automáticamente
 
     Returns:
         WebDriver configurado con técnicas anti-detección
     """
-    return StealthBrowser.create_driver()
+    return StealthBrowser.create_driver(proxy=proxy, use_proxy_manager=use_proxy_manager)

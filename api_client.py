@@ -1,28 +1,43 @@
 """
 Cliente de API para consultar la disponibilidad del calendario del Colosseo.
 Maneja cookies, sesiones y realiza peticiones HTTP con headers realistas.
+Soporta rotación de proxies para evitar bloqueos.
 """
 
 import json
+import time
 import requests
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from colosseo_config import config
+from proxy_manager import ProxyManager
 
 
 class ColosseoAPIClient:
     """Cliente para interactuar con la API del calendario del Colosseo"""
 
-    def __init__(self, cookies_file: str = None):
+    def __init__(self, cookies_file: str = None, use_proxy: bool = None):
         """
         Inicializa el cliente de API.
 
         Args:
             cookies_file: Ruta al archivo de cookies (opcional)
+            use_proxy: Activar uso de proxies (default: usa config.PROXY_ENABLED)
         """
         self.cookies_file = cookies_file or config.COOKIES_FILE
         self.session = None
         self.cookies = []
+
+        # Configurar proxy manager
+        use_proxy = use_proxy if use_proxy is not None else config.PROXY_ENABLED
+        if use_proxy:
+            self.proxy_manager = ProxyManager(
+                proxy_file=config.PROXY_FILE,
+                rotation_mode=config.PROXY_ROTATION_MODE,
+                reactivate_after_minutes=config.PROXY_REACTIVATE_MINUTES
+            )
+        else:
+            self.proxy_manager = None
 
     def save_cookies(self, cookies: List[dict]) -> bool:
         """
@@ -119,12 +134,29 @@ class ColosseoAPIClient:
         try:
             # Hacer petición de prueba a la página principal
             headers = config.get_headers()
+
+            # Obtener proxy si está habilitado
+            proxies = None
+            proxy_url = None
+            if self.proxy_manager and self.proxy_manager.enabled:
+                proxies = self.proxy_manager.get_next_proxy()
+                if proxies:
+                    proxy_url = proxies.get("http", "")
+                    print(f"[Proxy] Usando proxy para validación: {proxy_url[:40]}...")
+
+            start_time = time.time()
             response = temp_session.get(
                 config.BASE_URL,
                 headers=headers,
                 timeout=10,
-                allow_redirects=True
+                allow_redirects=True,
+                proxies=proxies
             )
+            elapsed = time.time() - start_time
+
+            # Registrar resultado del proxy
+            if proxy_url and self.proxy_manager:
+                self.proxy_manager.mark_proxy_result(proxy_url, True, elapsed)
 
             # Verificar respuesta
             if response.status_code == 403:
@@ -138,8 +170,12 @@ class ColosseoAPIClient:
             return True, "Cookies válidas"
 
         except requests.Timeout:
+            if proxy_url and self.proxy_manager:
+                self.proxy_manager.mark_proxy_result(proxy_url, False)
             return False, "Timeout en validación"
         except requests.RequestException as e:
+            if proxy_url and self.proxy_manager:
+                self.proxy_manager.mark_proxy_result(proxy_url, False)
             return False, f"Error en validación: {str(e)}"
 
     def fetch_calendar_data(
@@ -194,16 +230,32 @@ class ColosseoAPIClient:
         )
 
         try:
-            print(f"🌐 Consultando calendario para {month}...")
+            # Obtener proxy si está habilitado
+            proxies = None
+            proxy_url = None
+            if self.proxy_manager and self.proxy_manager.enabled:
+                proxies = self.proxy_manager.get_next_proxy()
+                if proxies:
+                    proxy_url = proxies.get("http", "")
+                    print(f"[Proxy] Usando: {proxy_url[:40]}...")
 
+            print(f"Consultando calendario para {month}...")
+
+            start_time = time.time()
             response = self.session.post(
                 config.API_ENDPOINT,
                 data=payload,
                 headers=headers,
-                timeout=10
+                timeout=15,
+                proxies=proxies
             )
+            elapsed = time.time() - start_time
 
             status_code = response.status_code
+
+            # Registrar éxito del proxy
+            if proxy_url and self.proxy_manager:
+                self.proxy_manager.mark_proxy_result(proxy_url, True, elapsed)
 
             if status_code == 200:
                 # Verificar si es HTML (Octofence) en lugar de JSON
@@ -248,10 +300,14 @@ class ColosseoAPIClient:
                 return None, status_code, f"HTTP {status_code}"
 
         except requests.Timeout:
-            print("⏰ Timeout en la consulta")
+            if proxy_url and self.proxy_manager:
+                self.proxy_manager.mark_proxy_result(proxy_url, False)
+            print("Timeout en la consulta")
             return None, 0, "Timeout"
         except requests.RequestException as e:
-            print(f"❌ Error en la petición: {e}")
+            if proxy_url and self.proxy_manager:
+                self.proxy_manager.mark_proxy_result(proxy_url, False)
+            print(f"Error en la petición: {e}")
             return None, 0, str(e)
 
     def fetch_multiple_months(

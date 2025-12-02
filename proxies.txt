@@ -1,0 +1,24 @@
+# Proxies para Colosseo Monitor
+# ================================
+# Formato soportado:
+#   - http://host:port
+#   - http://usuario:password@host:port
+#   - https://host:port
+#   - socks5://host:port
+#
+# Ejemplo de proveedores de proxy:
+#   - Bright Data (brightdata.com)
+#   - Oxylabs (oxylabs.io)
+#   - Smartproxy (smartproxy.com)
+#   - ProxyMesh (proxymesh.com)
+#
+# Para proxies residenciales rotatorios, usar el formato del proveedor.
+# Ejemplo Bright Data:
+#   http://brd-customer-XXXXX-zone-ZONE:PASSWORD@brd.superproxy.io:22225
+#
+# Proxies gratuitos (no recomendados para produccion):
+# http://proxy1.example.com:8080
+# http://proxy2.example.com:3128
+
+# === AGREGA TUS PROXIES AQUI ===
+

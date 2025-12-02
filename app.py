@@ -17,9 +17,18 @@ if sys.platform == 'win32':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from api_client import ColosseoAPIClient, AvailabilityChecker
+from proxy_manager import ProxyManager
+from colosseo_config import config
 import storage_client
 
 app = Flask(__name__)
+
+# Instancia global del proxy manager para la app
+proxy_manager = ProxyManager(
+    proxy_file=config.PROXY_FILE,
+    rotation_mode=config.PROXY_ROTATION_MODE,
+    reactivate_after_minutes=config.PROXY_REACTIVATE_MINUTES
+)
 
 # Configuración de tours disponibles
 TOURS = {
@@ -294,10 +303,15 @@ def consultar_disponibilidad():
             if mes_str not in meses_a_consultar:
                 meses_a_consultar.append(mes_str)
 
-        # Crear cliente con cookies
-        client = ColosseoAPIClient()
+        # Crear cliente con cookies y soporte de proxy
+        use_proxy = data.get('use_proxy', proxy_manager.enabled)
+        client = ColosseoAPIClient(use_proxy=use_proxy)
         client.cookies = cookies
         client.create_session_from_cookies(cookies)
+
+        # Si hay proxy activo, informar
+        if use_proxy and client.proxy_manager and client.proxy_manager.enabled:
+            print(f"[API] Usando sistema de proxies ({len(client.proxy_manager.proxies)} proxies)")
 
         # Consultar cada tour
         resultados = {}
@@ -794,6 +808,181 @@ def storage_status():
         "supabase_configured": storage_client.is_configured(),
         "mode": "cloud" if storage_client.is_configured() else "local"
     })
+
+
+# ============== ENDPOINTS DE PROXIES ==============
+
+@app.route('/api/proxy/status', methods=['GET'])
+def proxy_status():
+    """
+    Obtiene el estado actual del sistema de proxies.
+
+    Returns:
+        JSON con estadísticas de proxies
+    """
+    return jsonify(proxy_manager.get_stats())
+
+
+@app.route('/api/proxy/add', methods=['POST'])
+def proxy_add():
+    """
+    Agrega uno o más proxies a la lista.
+
+    Recibe:
+        - proxies: Lista de proxies (uno por línea o separados por coma)
+
+    Returns:
+        JSON con resultado
+    """
+    try:
+        data = request.json
+        proxies_text = data.get('proxies', '')
+
+        if not proxies_text:
+            return jsonify({"error": "No se proporcionaron proxies"}), 400
+
+        # Parsear proxies (soporta líneas o comas)
+        proxies_list = []
+        for line in proxies_text.replace(',', '\n').split('\n'):
+            proxy = line.strip()
+            if proxy and not proxy.startswith('#'):
+                proxies_list.append(proxy)
+
+        if not proxies_list:
+            return jsonify({"error": "No se encontraron proxies válidos"}), 400
+
+        # Agregar proxies
+        added = 0
+        for proxy in proxies_list:
+            try:
+                proxy_manager.add_proxy(proxy)
+                added += 1
+            except Exception as e:
+                print(f"Error agregando proxy {proxy}: {e}")
+
+        return jsonify({
+            "success": True,
+            "message": f"{added} proxies agregados",
+            "total_proxies": len(proxy_manager.proxies)
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
+@app.route('/api/proxy/test', methods=['POST'])
+def proxy_test():
+    """
+    Prueba los proxies configurados.
+
+    Returns:
+        JSON con resultados de prueba
+    """
+    try:
+        if not proxy_manager.proxies:
+            return jsonify({"error": "No hay proxies configurados"}), 400
+
+        results = proxy_manager.test_all_proxies()
+
+        # Contar resultados
+        working = sum(1 for r in results.values() if r['success'])
+        failed = len(results) - working
+
+        return jsonify({
+            "success": True,
+            "total": len(results),
+            "working": working,
+            "failed": failed,
+            "results": results
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
+@app.route('/api/proxy/clear', methods=['POST'])
+def proxy_clear():
+    """
+    Limpia las estadísticas de los proxies.
+
+    Returns:
+        JSON con resultado
+    """
+    try:
+        proxy_manager.clear_stats()
+        return jsonify({
+            "success": True,
+            "message": "Estadísticas reiniciadas"
+        })
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
+@app.route('/api/proxy/remove', methods=['POST'])
+def proxy_remove():
+    """
+    Elimina proxies de la lista.
+
+    Recibe:
+        - all: Si es true, elimina todos los proxies
+        - proxy: Proxy específico a eliminar
+
+    Returns:
+        JSON con resultado
+    """
+    try:
+        data = request.json
+
+        if data.get('all'):
+            count = len(proxy_manager.proxies)
+            proxy_manager.proxies = []
+            proxy_manager.enabled = False
+            return jsonify({
+                "success": True,
+                "message": f"{count} proxies eliminados"
+            })
+
+        proxy_url = data.get('proxy')
+        if proxy_url:
+            proxy_manager.proxies = [p for p in proxy_manager.proxies if p.url != proxy_url]
+            proxy_manager.enabled = len(proxy_manager.proxies) > 0
+            return jsonify({
+                "success": True,
+                "message": "Proxy eliminado",
+                "total_proxies": len(proxy_manager.proxies)
+            })
+
+        return jsonify({"error": "Especifica 'all' o 'proxy'"}), 400
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
+@app.route('/api/proxy/save', methods=['POST'])
+def proxy_save():
+    """
+    Guarda los proxies actuales en el archivo proxies.txt
+
+    Returns:
+        JSON con resultado
+    """
+    try:
+        if not proxy_manager.proxies:
+            return jsonify({"error": "No hay proxies para guardar"}), 400
+
+        with open(config.PROXY_FILE, 'w', encoding='utf-8') as f:
+            f.write("# Proxies para Colosseo Monitor\n")
+            f.write("# Formato: http://host:port o http://user:pass@host:port\n\n")
+            for proxy in proxy_manager.proxies:
+                f.write(f"{proxy.url}\n")
+
+        return jsonify({
+            "success": True,
+            "message": f"{len(proxy_manager.proxies)} proxies guardados en {config.PROXY_FILE}"
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
 
 
 # Para Vercel - exportar la app

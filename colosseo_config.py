@@ -50,6 +50,13 @@ class ColosseoConfig:
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     HEADLESS = os.getenv("HEADLESS", "false").lower() in ('1', 'true', 'yes')
 
+    # Configuración de proxies
+    PROXY_ENABLED = os.getenv("PROXY_ENABLED", "false").lower() in ('1', 'true', 'yes')
+    PROXY_FILE = os.getenv("PROXY_FILE", "proxies.txt")
+    PROXY_LIST = os.getenv("PROXY_LIST", "")  # Lista separada por comas
+    PROXY_ROTATION_MODE = os.getenv("PROXY_ROTATION_MODE", "round_robin")  # round_robin o random
+    PROXY_REACTIVATE_MINUTES = int(os.getenv("PROXY_REACTIVATE_MINUTES", "30"))
+
     @staticmethod
     def get_default_dates(days_ahead: int = 7) -> List[str]:
         """
