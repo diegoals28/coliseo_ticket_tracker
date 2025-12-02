@@ -67,7 +67,7 @@ def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None):
         response = requests.get(
             'https://app.scrapingbee.com/api/v1/',
             params=params,
-            timeout=120
+            timeout=300  # 5 minutos
         )
 
         print(f"[ScrapingBee] Status: {response.status_code}")
@@ -107,37 +107,25 @@ def extract_cookies_from_page():
     """
     print("\n[Step 1] Cargando página inicial...")
 
-    # Escenario de JavaScript para interactuar con la página
+    # Escenario de JavaScript para ScrapingBee (formato correcto)
+    # Documentación: https://www.scrapingbee.com/documentation/javascript-scenario/
     js_scenario = {
         "instructions": [
-            # Esperar a que cargue el contenido
             {"wait": 5000},
-
-            # Hacer scroll para activar lazy loading
             {"scroll_y": 500},
             {"wait": 2000},
             {"scroll_y": 0},
-            {"wait": 2000},
-
-            # Intentar click en un día del calendario si existe
-            {"click": "td[data-handler='selectDay'] a.ui-state-default", "timeout": 5000, "ignore_errors": True},
             {"wait": 3000},
-
-            # Intentar seleccionar horario
-            {"click": "input[name='slot']", "timeout": 5000, "ignore_errors": True},
+            {"click": "td[data-handler='selectDay'] a"},
             {"wait": 3000},
-
-            # Intentar click en botón + de tarifa
-            {"click": "button[data-dir='up']", "timeout": 5000, "ignore_errors": True},
+            {"click": "input[name='slot']"},
             {"wait": 3000},
-
-            # Intentar agregar al carrito
-            {"click": "button[type='submit'], .add-to-cart, .btn-primary", "timeout": 5000, "ignore_errors": True},
+            {"click": "button[data-dir='up']"},
             {"wait": 5000},
         ]
     }
 
-    result = fetch_with_scrapingbee(TOUR_URL, wait_time=15000, js_scenario=js_scenario)
+    result = fetch_with_scrapingbee(TOUR_URL, wait_time=20000, js_scenario=js_scenario)
 
     if not result['success']:
         print(f"[Error] {result.get('error', 'Unknown error')}")
@@ -165,17 +153,13 @@ def extract_cookies_from_page():
 
     if cookies:
         print(f"[Success] Cookies obtenidas: {list(cookies.keys())}")
-        # Convertir cookies de dict a lista de dicts para compatibilidad
         cookies_list = [
             {'name': k, 'value': v, 'domain': '.colosseo.it'}
             for k, v in cookies.items()
         ]
         return cookies_list
 
-    # Si no hay cookies en la respuesta, intentar extraerlas del HTML
-    # (algunos sitios las setean via JavaScript)
-    print("[Info] No se encontraron cookies en respuesta, intentando método alternativo...")
-
+    print("[Info] No se encontraron cookies en respuesta")
     return None
 
 
