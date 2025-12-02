@@ -99,15 +99,93 @@ def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None):
         return {'success': False, 'error': str(e)}
 
 
+def extract_cookies_with_cart_flow():
+    """
+    Extrae cookies completando el flujo de reserva:
+    1. Cargar página
+    2. Seleccionar día en calendario
+    3. Seleccionar horario
+    4. Incrementar cantidad
+    5. Agregar al carrito
+    """
+    print("\n[Flow] Ejecutando flujo completo de reserva...")
+
+    # JS Scenario para completar el flujo de reserva
+    # Documentación: https://www.scrapingbee.com/documentation/javascript-scenario/
+    js_scenario = {
+        "instructions": [
+            # Esperar carga inicial
+            {"wait": 8000},
+
+            # Click en primer día disponible del calendario (jQuery UI Datepicker)
+            {"click": "td[data-handler='selectDay'] a.ui-state-default"},
+            {"wait": 5000},
+
+            # Click en primer horario disponible (radio button)
+            {"click": "input[type='radio'][name='slot']"},
+            {"wait": 3000},
+
+            # Click en botón + para incrementar cantidad
+            {"click": "button[data-dir='up']"},
+            {"wait": 2000},
+
+            # Click otra vez en + para asegurar al menos 1
+            {"click": "button[data-dir='up']"},
+            {"wait": 2000},
+
+            # Click en agregar al carrito
+            {"click": "button[type='submit']"},
+            {"wait": 8000},
+        ]
+    }
+
+    result = fetch_with_scrapingbee(TOUR_URL, wait_time=10000, js_scenario=js_scenario)
+
+    if not result['success']:
+        print(f"[Error] {result.get('error', 'Unknown error')}")
+        return None
+
+    html = result.get('html', '')
+    cookies = result.get('cookies', {})
+
+    print(f"[Result] HTML length: {len(html)} chars")
+    print(f"[Result] Cookies: {len(cookies)}")
+
+    # Verificar si tenemos las cookies críticas
+    cookie_names = list(cookies.keys()) if isinstance(cookies, dict) else [c.get('name', '') for c in cookies]
+    critical_cookies = ['octofence-waap-id', 'octofence-waap-sessid', 'PHPSESSID']
+    has_critical = any(c in str(cookie_names) for c in critical_cookies)
+
+    print(f"[Debug] Cookie names: {cookie_names}")
+    print(f"[Debug] Has critical cookies: {has_critical}")
+
+    if cookies:
+        if isinstance(cookies, dict):
+            cookies_list = [
+                {'name': k, 'value': v, 'domain': '.colosseo.it'}
+                for k, v in cookies.items()
+            ]
+        else:
+            cookies_list = cookies
+        return cookies_list
+
+    return None
+
+
 def extract_cookies_from_page():
     """
     Extrae cookies del sitio usando ScrapingBee.
-    Primero intenta carga simple, luego con interacción.
+    Primero intenta con flujo de carrito, luego simple.
     """
-    print("\n[Step 1] Cargando página inicial (sin JS scenario)...")
+    print("\n[Step 1] Intentando flujo con carrito...")
 
-    # Primero intentar sin js_scenario para ver si pasa Octofence
-    result = fetch_with_scrapingbee(TOUR_URL, wait_time=10000)
+    # Primero intentar con el flujo completo de carrito
+    cookies = extract_cookies_with_cart_flow()
+    if cookies and len(cookies) >= 10:
+        return cookies
+
+    print("\n[Step 2] Flujo de carrito no obtuvo suficientes cookies, intentando carga simple...")
+    result = fetch_with_scrapingbee(TOUR_URL, wait_time=15000)
 
     if not result['success']:
         print(f"[Error] {result.get('error', 'Unknown error')}")
@@ -380,25 +458,33 @@ def main():
 
     cookies = None
 
-    # Método 1: Básico sin proxies especiales
+    # Método 1: Flujo completo con carrito (premium proxy)
     print("\n" + "=" * 40)
-    print("Método 1: Básico")
+    print("Método 1: Flujo con carrito (Premium)")
     print("=" * 40)
-    cookies = fetch_basic_page()
+    cookies = extract_cookies_from_page()
 
-    # Método 2: Con stealth proxy
+    # Verificar si tenemos las cookies críticas
+    if cookies:
+        cookie_names = [c.get('name', '') for c in cookies]
+        has_critical = any('octofence-waap' in str(cookie_names) or 'PHPSESSID' in str(cookie_names) for _ in [1])
+        if not has_critical and len(cookies) < 10:
+            print(f"[Warning] Solo {len(cookies)} cookies, faltan cookies críticas")
+            cookies = None
+
+    # Método 2: Stealth proxy con carrito
     if not cookies:
         print("\n" + "=" * 40)
         print("Método 2: Stealth Proxy")
         print("=" * 40)
         cookies = fetch_simple_page()
 
-    # Método 3: Con premium proxy
+    # Método 3: Básico
     if not cookies:
         print("\n" + "=" * 40)
-        print("Método 3: Premium Proxy")
+        print("Método 3: Básico")
         print("=" * 40)
-        cookies = extract_cookies_from_page()
+        cookies = fetch_basic_page()
 
     # Guardar cookies si se obtuvieron
     if cookies and len(cookies) > 0:
