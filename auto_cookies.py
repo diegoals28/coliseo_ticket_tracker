@@ -55,8 +55,7 @@ def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None):
         'premium_proxy': 'true',  # Mejor para sitios con anti-bot
         'country_code': 'it',     # Proxy italiano para sitio italiano
         'wait': wait_time,        # Esperar JS
-        'wait_for': '.ui-datepicker, .tariff-option, #calendar',  # Esperar elementos
-        'return_page_source': 'true',
+        'block_resources': 'false',  # No bloquear recursos
         'json_response': 'true',  # Obtener cookies y metadata
     }
 
@@ -102,30 +101,13 @@ def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None):
 
 def extract_cookies_from_page():
     """
-    Extrae cookies del sitio usando ScrapingBee con JavaScript scenario
-    para simular el flujo de reserva.
+    Extrae cookies del sitio usando ScrapingBee.
+    Primero intenta carga simple, luego con interacción.
     """
-    print("\n[Step 1] Cargando página inicial...")
+    print("\n[Step 1] Cargando página inicial (sin JS scenario)...")
 
-    # Escenario de JavaScript para ScrapingBee (formato correcto)
-    # Documentación: https://www.scrapingbee.com/documentation/javascript-scenario/
-    js_scenario = {
-        "instructions": [
-            {"wait": 5000},
-            {"scroll_y": 500},
-            {"wait": 2000},
-            {"scroll_y": 0},
-            {"wait": 3000},
-            {"click": "td[data-handler='selectDay'] a"},
-            {"wait": 3000},
-            {"click": "input[name='slot']"},
-            {"wait": 3000},
-            {"click": "button[data-dir='up']"},
-            {"wait": 5000},
-        ]
-    }
-
-    result = fetch_with_scrapingbee(TOUR_URL, wait_time=20000, js_scenario=js_scenario)
+    # Primero intentar sin js_scenario para ver si pasa Octofence
+    result = fetch_with_scrapingbee(TOUR_URL, wait_time=10000)
 
     if not result['success']:
         print(f"[Error] {result.get('error', 'Unknown error')}")
@@ -165,12 +147,127 @@ def extract_cookies_from_page():
 
 def fetch_simple_page():
     """
-    Método más simple: solo cargar la página y obtener cookies iniciales.
-    A veces es suficiente para obtener cookies de sesión básicas.
+    Método más simple: sin premium_proxy, solo stealth_proxy.
     """
-    print("\n[Simple] Cargando página con método simple...")
+    print("\n[Simple] Cargando página con stealth proxy...")
 
-    result = fetch_with_scrapingbee(TOUR_URL, wait_time=20000)
+    # Intentar con stealth_proxy en lugar de premium_proxy
+    params = {
+        'api_key': SCRAPINGBEE_API_KEY,
+        'url': TOUR_URL,
+        'render_js': 'true',
+        'stealth_proxy': 'true',  # Alternativa a premium
+        'wait': 15000,
+        'block_resources': 'false',
+        'json_response': 'true',
+    }
+
+    try:
+        response = requests.get(
+            'https://app.scrapingbee.com/api/v1/',
+            params=params,
+            timeout=300
+        )
+
+        print(f"[Simple] Status: {response.status_code}")
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                html = data.get('body', '')
+                cookies = data.get('cookies', {})
+
+                # Guardar HTML para debug
+                try:
+                    with open('debug_scrapingbee.html', 'w', encoding='utf-8') as f:
+                        f.write(html)
+                    print("[Debug] HTML guardado")
+                except:
+                    pass
+
+                print(f"[Simple] HTML: {len(html)} chars, Cookies: {len(cookies)}")
+
+                if cookies:
+                    cookies_list = [
+                        {'name': k, 'value': v, 'domain': '.colosseo.it'}
+                        for k, v in cookies.items()
+                    ]
+                    return cookies_list
+
+            except:
+                pass
+
+        else:
+            print(f"[Simple] Error: {response.text[:300]}")
+
+    except Exception as e:
+        print(f"[Simple] Exception: {e}")
+
+    return None
+
+
+def fetch_basic_page():
+    """
+    Método básico: sin proxies especiales, solo render_js.
+    """
+    print("\n[Basic] Cargando página sin proxies especiales...")
+
+    params = {
+        'api_key': SCRAPINGBEE_API_KEY,
+        'url': TOUR_URL,
+        'render_js': 'true',
+        'wait': 8000,
+        'json_response': 'true',
+    }
+
+    try:
+        response = requests.get(
+            'https://app.scrapingbee.com/api/v1/',
+            params=params,
+            timeout=180
+        )
+
+        print(f"[Basic] Status: {response.status_code}")
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                html = data.get('body', '')
+                cookies = data.get('cookies', {})
+
+                print(f"[Basic] HTML: {len(html)} chars, Cookies: {len(cookies)}")
+
+                # Verificar si pasó Octofence
+                html_lower = html.lower()
+                if 'tariff' in html_lower or 'calendar' in html_lower:
+                    print("[Basic] Contenido real detectado!")
+
+                if cookies:
+                    cookies_list = [
+                        {'name': k, 'value': v, 'domain': '.colosseo.it'}
+                        for k, v in cookies.items()
+                    ]
+                    return cookies_list
+
+            except:
+                pass
+
+        else:
+            print(f"[Basic] Error: {response.text[:200]}")
+
+    except Exception as e:
+        print(f"[Basic] Exception: {e}")
+
+    return None
+
+
+def fetch_simple_page_old():
+    """
+    Método legacy.
+    """
+    print("\n[Legacy] Cargando...")
+
+    result = fetch_with_scrapingbee(TOUR_URL, wait_time=15000)
 
     if not result['success']:
         print(f"[Error] {result.get('error', 'Unknown error')}")
@@ -278,18 +375,25 @@ def main():
 
     cookies = None
 
-    # Intentar método con JS scenario primero
+    # Método 1: Básico sin proxies especiales
     print("\n" + "=" * 40)
-    print("Método 1: Con interacción JavaScript")
+    print("Método 1: Básico")
     print("=" * 40)
-    cookies = extract_cookies_from_page()
+    cookies = fetch_basic_page()
 
-    # Si no funciona, intentar método simple
+    # Método 2: Con stealth proxy
     if not cookies:
         print("\n" + "=" * 40)
-        print("Método 2: Carga simple")
+        print("Método 2: Stealth Proxy")
         print("=" * 40)
         cookies = fetch_simple_page()
+
+    # Método 3: Con premium proxy
+    if not cookies:
+        print("\n" + "=" * 40)
+        print("Método 3: Premium Proxy")
+        print("=" * 40)
+        cookies = extract_cookies_from_page()
 
     # Guardar cookies si se obtuvieron
     if cookies and len(cookies) > 0:
