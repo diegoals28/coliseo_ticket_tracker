@@ -1249,14 +1249,29 @@ def fetch_availability_from_browser(driver):
                                 print(f"  Body length: {len(body_text)} chars")
 
                                 if body_text:
-                                    data = json_module.loads(body_text)
-                                    print(f"  Response keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
-                                    if data and 'timeslots' in data:
-                                        timeslots = data.get('timeslots', [])
+                                    response_data = json_module.loads(body_text)
+                                    print(f"  Response keys: {list(response_data.keys()) if isinstance(response_data, dict) else type(response_data)}")
+
+                                    # La respuesta puede tener timeslots directamente o dentro de 'data'
+                                    timeslots = None
+                                    if 'timeslots' in response_data:
+                                        timeslots = response_data.get('timeslots', [])
+                                    elif 'data' in response_data:
+                                        inner_data = response_data.get('data', {})
+                                        if isinstance(inner_data, dict) and 'timeslots' in inner_data:
+                                            timeslots = inner_data.get('timeslots', [])
+                                        elif isinstance(inner_data, list):
+                                            # data puede ser directamente la lista de timeslots
+                                            timeslots = inner_data
+                                        print(f"  Inner data keys: {list(inner_data.keys()) if isinstance(inner_data, dict) else f'list[{len(inner_data)}]'}")
+
+                                    if timeslots:
                                         print(f"  Capturados {len(timeslots)} timeslots!")
                                         tour_data['timeslots'].extend(timeslots)
-                                    elif data and 'message' in data:
-                                        print(f"  API Error: {data.get('message', '')[:50]}")
+                                    elif response_data.get('message'):
+                                        print(f"  API Error: {response_data.get('message', '')[:50]}")
+                                    else:
+                                        print(f"  No timeslots found in response")
                                 else:
                                     print(f"  Body vacío")
                             except Exception as e:
