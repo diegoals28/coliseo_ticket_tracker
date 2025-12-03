@@ -132,7 +132,7 @@ def wait_for_octofence(driver, timeout=60):
 
 
 def refresh_cookies():
-    """Obtiene cookies frescas navegando al sitio"""
+    """Obtiene cookies frescas navegando al sitio y completando flujo de reserva"""
     global state
 
     print("[Cookies] Iniciando refresh de cookies...")
@@ -155,13 +155,92 @@ def refresh_cookies():
                 state["status"] = "octofence_blocked"
             return False
 
-        # Visitar carrito para generar cookies de sesión
+        print("[Cookies] Octofence pasado, iniciando flujo de reserva...")
+
+        # Aceptar cookies banner
+        try:
+            driver.execute_script("""
+                var btns = document.querySelectorAll('button, a');
+                for (var b of btns) {
+                    var txt = b.textContent.toLowerCase();
+                    if (txt.includes('accept') || txt.includes('aceptar') || txt.includes('accetta')) {
+                        b.click(); return;
+                    }
+                }
+            """)
+            time.sleep(1)
+        except:
+            pass
+
+        # Visitar carrito primero para iniciar sesión
+        print("[Cookies] Visitando carrito...")
         driver.get("https://ticketing.colosseo.it/en/cart/")
         time.sleep(3)
 
         # Volver al tour
+        print("[Cookies] Volviendo al tour...")
         driver.get(TOUR_URL)
-        time.sleep(3)
+        time.sleep(5)
+
+        # Esperar que cargue el calendario
+        if not wait_for_octofence(driver, timeout=30):
+            print("[Cookies] Warning: Timeout esperando calendario")
+
+        # Seleccionar día del calendario
+        print("[Cookies] Seleccionando día...")
+        try:
+            driver.execute_script("""
+                var days = document.querySelectorAll('.ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a');
+                if (days.length > 0) { days[0].click(); }
+            """)
+            time.sleep(4)
+        except Exception as e:
+            print(f"[Cookies] Error seleccionando día: {e}")
+
+        # Seleccionar horario
+        print("[Cookies] Seleccionando horario...")
+        try:
+            driver.execute_script("""
+                var slots = document.querySelectorAll('input[name="slot"]');
+                if (slots.length > 0) { slots[0].click(); }
+            """)
+            time.sleep(3)
+        except Exception as e:
+            print(f"[Cookies] Error seleccionando horario: {e}")
+
+        # Incrementar cantidad
+        print("[Cookies] Incrementando cantidad...")
+        try:
+            driver.execute_script("""
+                var plusBtns = document.querySelectorAll('button[data-dir="up"]');
+                if (plusBtns.length > 0) { plusBtns[0].click(); }
+            """)
+            time.sleep(2)
+        except Exception as e:
+            print(f"[Cookies] Error incrementando: {e}")
+
+        # Intentar click en Confirm
+        print("[Cookies] Buscando botón Confirm...")
+        try:
+            confirm_result = driver.execute_script("""
+                var submits = document.querySelectorAll('input[type="submit"]');
+                for (var s of submits) {
+                    if (s.value.toLowerCase() === 'confirm' && s.offsetParent !== null) {
+                        s.click();
+                        return 'clicked';
+                    }
+                }
+                return 'not found';
+            """)
+            print(f"[Cookies] Confirm result: {confirm_result}")
+            time.sleep(3)
+        except Exception as e:
+            print(f"[Cookies] Error en confirm: {e}")
+
+        # Navegar al carrito final
+        print("[Cookies] Navegando al carrito final...")
+        driver.get("https://ticketing.colosseo.it/en/cart/")
+        time.sleep(5)
 
         # Obtener cookies via CDP
         result = driver.execute_cdp_cmd('Network.getAllCookies', {})
@@ -180,7 +259,20 @@ def refresh_cookies():
                     'httpOnly': c.get('httpOnly', False)
                 })
 
-        print(f"[Cookies] Obtenidas {len(cookies)} cookies")
+        print(f"[Cookies] Obtenidas {len(cookies)} cookies:")
+        critical = ['PHPSESSID', 'octofence-waap-id', 'octofence-waap-sessid']
+        for c in cookies:
+            is_critical = c['name'] in critical
+            print(f"  {'*' if is_critical else '-'} {c['name']} (httpOnly: {c.get('httpOnly', False)})")
+
+        # Verificar cookies críticas
+        cookie_names = [c['name'] for c in cookies]
+        has_critical = all(crit in cookie_names for crit in critical)
+        if has_critical:
+            print("[Cookies] TODAS las cookies críticas obtenidas!")
+        else:
+            missing = [c for c in critical if c not in cookie_names]
+            print(f"[Cookies] Faltan cookies críticas: {missing}")
 
         # Guardar estado
         with state_lock:
