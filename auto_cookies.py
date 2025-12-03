@@ -485,12 +485,11 @@ def extract_with_session_flow():
     Esto simula mejor el comportamiento de un usuario real.
     """
     import random
-    import string
 
     print("\n[Session] Iniciando flujo con sesion persistente...")
 
-    # Generar ID de sesion unico
-    session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
+    # Generar ID de sesion unico (debe ser entero para ScrapingBee)
+    session_id = random.randint(100000, 999999)
     print(f"[Session] ID: {session_id}")
 
     all_cookies = {}
