@@ -359,6 +359,70 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] No se pudo incrementar: {e}")
 
+        # 5b. CRITICO: Hacer click en boton "Add to Cart" / "Book" / "Continue"
+        print("[Flow] Buscando boton ADD TO CART...")
+        try:
+            add_to_cart_result = driver.execute_script("""
+                // Buscar boton por texto
+                var buttons = document.querySelectorAll('button, input[type="submit"], a.btn, a.button');
+                var targetTexts = ['add to cart', 'add to basket', 'book now', 'book', 'continue',
+                                   'aggiungi', 'prenota', 'continua', 'proceed', 'next'];
+
+                for (var btn of buttons) {
+                    var text = (btn.textContent || btn.value || '').toLowerCase().trim();
+                    for (var target of targetTexts) {
+                        if (text.includes(target)) {
+                            console.log('Found button:', text);
+                            btn.scrollIntoView({block: 'center'});
+                            btn.click();
+                            return 'Clicked: ' + text;
+                        }
+                    }
+                }
+
+                // Buscar por clase
+                var classButtons = document.querySelectorAll('.add-to-cart, .book-now, .btn-book, .abc-book-btn, .booking-submit, [class*="cart"], [class*="book"]');
+                for (var btn of classButtons) {
+                    if (btn.offsetParent !== null) {
+                        btn.click();
+                        return 'Clicked by class: ' + btn.className;
+                    }
+                }
+
+                // Buscar formulario de booking y submit
+                var bookingForm = document.querySelector('form[action*="cart"], form[action*="book"], form.booking-form, form#booking-form');
+                if (bookingForm) {
+                    var submitBtn = bookingForm.querySelector('button[type="submit"], input[type="submit"]');
+                    if (submitBtn) {
+                        submitBtn.click();
+                        return 'Submitted booking form';
+                    }
+                }
+
+                // Ultimo recurso: buscar cualquier boton visible que no sea +/-
+                var allBtns = document.querySelectorAll('button[type="submit"]:not([data-dir])');
+                for (var btn of allBtns) {
+                    if (btn.offsetParent !== null && btn.offsetWidth > 50) {
+                        var text = btn.textContent.trim();
+                        if (text && text.length > 2 && text.length < 30) {
+                            btn.click();
+                            return 'Clicked submit button: ' + text;
+                        }
+                    }
+                }
+
+                return 'No add-to-cart button found';
+            """)
+            print(f"[Flow] Add to cart result: {add_to_cart_result}")
+            time.sleep(5)  # Esperar a que procese
+
+            # Verificar si hubo navegacion
+            current_url = driver.current_url
+            print(f"[Flow] URL despues de add-to-cart: {current_url}")
+
+        except Exception as e:
+            print(f"[Flow] Error en add-to-cart: {e}")
+
         # 6. Debug: ver todos los formularios
         print("[Flow] Analizando formularios en la pagina...")
         try:
