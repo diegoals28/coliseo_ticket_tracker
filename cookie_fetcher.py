@@ -362,81 +362,157 @@ def complete_booking_flow(driver):
         # 5b. CRITICO: Hacer click en boton "Add to Cart" / "Book"
         print("[Flow] Buscando boton ADD TO CART...")
         try:
-            add_to_cart_result = driver.execute_script("""
-                // Textos a buscar (orden de prioridad)
-                var targetTexts = ['add to cart', 'add to basket', 'book now', 'checkout',
-                                   'aggiungi al carrello', 'prenota ora', 'proceed to checkout'];
-                // Textos a EVITAR
-                var excludeTexts = ['continue shopping', 'keep shopping', 'seguir comprando'];
+            # Primero mostrar el estado actual de la pagina
+            page_state = driver.execute_script("""
+                var result = {};
 
-                var buttons = document.querySelectorAll('button, input[type="submit"], a.btn, a.button');
+                // Verificar si hay items seleccionados
+                var qtyInputs = document.querySelectorAll('input[type="number"]');
+                var totalQty = 0;
+                for (var inp of qtyInputs) {
+                    totalQty += parseInt(inp.value) || 0;
+                }
+                result.totalQuantity = totalQty;
+
+                // Verificar formularios de reserva
+                var bookingForms = document.querySelectorAll('form[action*="cart"], form[action*="book"], form.booking-form, form[id*="book"]');
+                result.bookingForms = bookingForms.length;
+
+                // Buscar botones de submit dentro de formularios
+                var submitBtns = document.querySelectorAll('form input[type="submit"], form button[type="submit"]');
+                var submitTexts = [];
+                for (var btn of submitBtns) {
+                    submitTexts.push((btn.value || btn.textContent || '').substring(0, 30));
+                }
+                result.submitButtons = submitTexts;
+
+                return JSON.stringify(result);
+            """)
+            print(f"[Flow] Page state: {page_state}")
+
+            add_to_cart_result = driver.execute_script("""
+                // PASO 1: Buscar formularios de booking y hacer submit
+                var forms = document.querySelectorAll('form');
+                for (var form of forms) {
+                    var action = (form.action || '').toLowerCase();
+                    var id = (form.id || '').toLowerCase();
+                    var classes = (form.className || '').toLowerCase();
+
+                    // Formularios de reserva/carrito
+                    if (action.includes('cart') || action.includes('book') ||
+                        id.includes('book') || id.includes('cart') ||
+                        classes.includes('book') || classes.includes('cart')) {
+
+                        // Buscar boton de submit dentro del form
+                        var submitBtn = form.querySelector('input[type="submit"], button[type="submit"], button:not([data-dir])');
+                        if (submitBtn && submitBtn.offsetParent !== null) {
+                            var text = (submitBtn.value || submitBtn.textContent || '').toLowerCase();
+                            if (!text.includes('shopping') && !text.includes('continue')) {
+                                submitBtn.click();
+                                return 'Submitted form: ' + (form.id || form.action || 'unknown');
+                            }
+                        }
+                    }
+                }
+
+                // PASO 2: Buscar input[type=submit] con texto relevante
+                var submits = document.querySelectorAll('input[type="submit"]');
+                for (var sub of submits) {
+                    var val = (sub.value || '').toLowerCase();
+                    if (val.includes('add') || val.includes('book') || val.includes('buy') ||
+                        val.includes('aggiungi') || val.includes('prenota') || val.includes('acquista')) {
+                        sub.click();
+                        return 'Clicked submit: ' + sub.value;
+                    }
+                }
+
+                // PASO 3: Buscar boton con iconos de carrito
+                var cartIconBtns = document.querySelectorAll('button i.fa-shopping-cart, button i.fa-cart-plus, button svg[class*="cart"]');
+                for (var icon of cartIconBtns) {
+                    var btn = icon.closest('button');
+                    if (btn && btn.offsetParent !== null) {
+                        btn.click();
+                        return 'Clicked cart icon button';
+                    }
+                }
+
+                // PASO 4: Textos a buscar (orden de prioridad)
+                var targetTexts = ['add to cart', 'add to basket', 'book now', 'buy now', 'buy tickets',
+                                   'aggiungi al carrello', 'prenota ora', 'acquista', 'procedi'];
+                var excludeTexts = ['continue shopping', 'keep shopping', 'seguir comprando', 'back'];
+
+                var buttons = document.querySelectorAll('button, input[type="submit"], a.btn, a.button, .btn, [role="button"]');
 
                 for (var btn of buttons) {
+                    if (btn.offsetParent === null) continue; // Skip hidden
                     var text = (btn.textContent || btn.value || '').toLowerCase().trim();
 
                     // Saltar si contiene texto a excluir
                     var shouldExclude = false;
                     for (var ex of excludeTexts) {
-                        if (text.includes(ex)) {
-                            shouldExclude = true;
-                            break;
-                        }
+                        if (text.includes(ex)) { shouldExclude = true; break; }
                     }
-                    if (shouldExclude) continue;
+                    if (shouldExclude || btn.hasAttribute('data-dir')) continue;
 
                     for (var target of targetTexts) {
                         if (text.includes(target)) {
                             btn.scrollIntoView({block: 'center'});
                             btn.click();
-                            return 'Clicked: ' + text;
+                            return 'Clicked: ' + text.substring(0, 40);
                         }
                     }
                 }
 
-                // Buscar por clase especifica de ABC (el sistema de booking del sitio)
-                var abcButtons = document.querySelectorAll('.abc-book-btn, .abc-add-to-cart, [class*="abc-"][class*="btn"]');
-                for (var btn of abcButtons) {
-                    if (btn.offsetParent !== null && !btn.hasAttribute('data-dir')) {
-                        var text = btn.textContent.toLowerCase();
-                        if (!text.includes('shopping')) {
-                            btn.click();
-                            return 'Clicked ABC button: ' + btn.className;
+                // PASO 5: Buscar por clase especifica
+                var classPatterns = ['.abc-book-btn', '.abc-add-to-cart', '.add-to-cart', '.btn-book',
+                                     '.btn-add-cart', '.book-button', '[class*="add"][class*="cart"]',
+                                     '[class*="book"][class*="btn"]', '.woocommerce-Button'];
+                for (var pattern of classPatterns) {
+                    try {
+                        var btns = document.querySelectorAll(pattern);
+                        for (var btn of btns) {
+                            if (btn.offsetParent !== null && !btn.hasAttribute('data-dir')) {
+                                var text = (btn.textContent || '').toLowerCase();
+                                if (!text.includes('shopping') && !text.includes('continue')) {
+                                    btn.click();
+                                    return 'Clicked pattern ' + pattern + ': ' + text.substring(0, 30);
+                                }
+                            }
                         }
-                    }
+                    } catch(e) {}
                 }
 
-                // Buscar el modal del carrito y su boton de checkout
-                var cartModal = document.querySelector('.cart-modal, #cart-modal, [class*="cart"][class*="modal"]');
-                if (cartModal) {
-                    var checkoutBtn = cartModal.querySelector('a[href*="checkout"], a[href*="cart"], button');
-                    if (checkoutBtn && checkoutBtn.offsetParent !== null) {
-                        checkoutBtn.click();
-                        return 'Clicked cart modal button';
+                // PASO 6: Buscar botones grandes (probablemente el principal)
+                var allBtns = document.querySelectorAll('button:not([data-dir]), a.btn');
+                var biggestBtn = null;
+                var biggestSize = 0;
+                for (var btn of allBtns) {
+                    if (btn.offsetParent === null) continue;
+                    var text = (btn.textContent || '').toLowerCase();
+                    if (text.includes('shopping') || text.includes('continue') || text.includes('close')) continue;
+
+                    var size = btn.offsetWidth * btn.offsetHeight;
+                    if (size > biggestSize && size > 2000) {
+                        biggestSize = size;
+                        biggestBtn = btn;
                     }
                 }
-
-                // Buscar link directo al carrito
-                var cartLinks = document.querySelectorAll('a[href*="/cart"], a[href*="/checkout"]');
-                for (var link of cartLinks) {
-                    var text = link.textContent.toLowerCase();
-                    if (text.includes('checkout') || text.includes('view cart') || text.includes('cart')) {
-                        if (!text.includes('shopping')) {
-                            link.click();
-                            return 'Clicked cart link: ' + text;
-                        }
-                    }
+                if (biggestBtn) {
+                    biggestBtn.click();
+                    return 'Clicked biggest button: ' + (biggestBtn.textContent || '').substring(0, 30);
                 }
 
-                // Listar todos los botones visibles para debug
+                // Debug: listar todos los botones visibles
                 var visibleBtns = [];
-                var allBtns = document.querySelectorAll('button:not([data-dir])');
+                var allBtns = document.querySelectorAll('button, input[type="submit"], a.btn');
                 for (var btn of allBtns) {
                     if (btn.offsetParent !== null && btn.offsetWidth > 40) {
-                        var text = (btn.textContent || '').trim().substring(0, 30);
-                        if (text) visibleBtns.push(text);
+                        var text = (btn.textContent || btn.value || '').trim().substring(0, 30);
+                        var cls = (btn.className || '').substring(0, 20);
+                        if (text || cls) visibleBtns.push(text + '|' + cls);
                     }
                 }
-                return 'No cart button. Visible buttons: ' + visibleBtns.slice(0, 5).join(', ');
+                return 'No cart button. Visible: ' + visibleBtns.slice(0, 8).join('; ');
             """)
             print(f"[Flow] Add to cart result: {add_to_cart_result}")
             time.sleep(5)  # Esperar a que procese
