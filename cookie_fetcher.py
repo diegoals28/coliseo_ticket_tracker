@@ -1124,6 +1124,54 @@ def save_to_supabase(cookies):
         return False
 
 
+def test_api_with_cookies(driver, cookies):
+    """Prueba hacer una consulta API usando el navegador"""
+    print("\n[API Test] Probando consulta con cookies...")
+
+    try:
+        # Hacer la consulta AJAX desde el navegador
+        result = driver.execute_script("""
+            return new Promise((resolve) => {
+                var formData = new FormData();
+                formData.append('action', 'mtajax_calendars_month');
+                formData.append('guids[entranceEvent_guid][]', 'a9a4b0f8-bf3c-4f22-afcd-196a27be04b9');
+                formData.append('singleDaySession', 'false');
+                formData.append('month', new Date().getMonth() + 1);
+                formData.append('year', new Date().getFullYear());
+
+                fetch('/mtajax/calendars_month', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.timeslots) {
+                        resolve({success: true, timeslots: data.timeslots.length, sample: data.timeslots.slice(0, 2)});
+                    } else if (data && data.message) {
+                        resolve({success: false, error: data.message});
+                    } else {
+                        resolve({success: false, error: 'Unknown response', keys: Object.keys(data || {})});
+                    }
+                })
+                .catch(e => resolve({success: false, error: e.message}));
+            });
+        """)
+
+        print(f"[API Test] Result: {result}")
+
+        if result and result.get('success'):
+            print(f"[API Test] SUCCESS! {result.get('timeslots')} timeslots found")
+            return True
+        else:
+            print(f"[API Test] Failed: {result.get('error', 'unknown')}")
+            return False
+
+    except Exception as e:
+        print(f"[API Test] Error: {e}")
+        return False
+
+
 def main():
     print("=" * 60)
     print("COOKIE FETCHER - Railway + undetected-chromedriver")
@@ -1170,6 +1218,13 @@ def main():
                 print("[Success] Cookies criticas encontradas!")
             else:
                 print("[Warning] Faltan algunas cookies criticas, pero intentando guardar...")
+
+            # NUEVO: Probar que las cookies funcionan para consultar la API
+            api_works = test_api_with_cookies(driver, cookies)
+            if api_works:
+                print("[API Test] Las cookies funcionan correctamente!")
+            else:
+                print("[API Test] Las cookies no funcionan para la API")
 
             # Guardar en Supabase
             save_to_supabase(cookies)
