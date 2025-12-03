@@ -275,70 +275,111 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] Error explorando pagina: {e}")
 
-        # 7b. Intentar agregar al carrito de varias formas
-        print("[Flow] Intentando agregar al carrito...")
+        # 7b. Analizar la estructura de tarifas en detalle
+        print("[Flow] Analizando estructura de tarifas...")
+        try:
+            tariff_analysis = driver.execute_script("""
+                // Buscar la primera tarifa con cantidad > 0
+                var qtyInputs = document.querySelectorAll('input[type="number"]');
+                for (var input of qtyInputs) {
+                    var val = parseInt(input.value) || 0;
+                    if (val > 0) {
+                        // Encontramos una tarifa con cantidad
+                        var row = input.closest('tr, .row, .tariff-row, div[class*="tariff"]');
+                        if (row) {
+                            return 'Found qty=' + val + ' in: ' + row.className + ' | HTML: ' + row.innerHTML.substring(0, 300);
+                        }
+                    }
+                }
+
+                // Si no hay cantidad > 0, mostrar el primer input
+                if (qtyInputs.length > 0) {
+                    var first = qtyInputs[0];
+                    var row = first.closest('tr, .row, div');
+                    return 'First qty input value=' + first.value + ' | Row HTML: ' + (row ? row.innerHTML.substring(0, 300) : 'no row');
+                }
+
+                return 'No qty inputs found';
+            """)
+            print(f"[Flow] Tariff analysis: {tariff_analysis[:400] if tariff_analysis else 'None'}")
+        except Exception as e:
+            print(f"[Flow] Error analizando tarifas: {e}")
+
+        # 7c. Buscar boton de agregar especifico del sitio
+        print("[Flow] Buscando boton agregar especifico...")
         try:
             add_cart_result = driver.execute_script("""
-                // Metodo 1: Buscar boton con icono de carrito o plus
-                var iconButtons = document.querySelectorAll('button i, a i');
-                for (var icon of iconButtons) {
-                    var classes = icon.className || '';
-                    if (classes.includes('cart') || classes.includes('plus') || classes.includes('add') || classes.includes('shopping')) {
-                        var btn = icon.closest('button') || icon.closest('a');
-                        if (btn && btn.offsetParent !== null) {
-                            btn.click();
-                            return 'Method1: Clicked icon button with class: ' + classes;
+                // El sitio probablemente usa un boton con clase especifica o data attribute
+                // Buscar todos los botones y mostrar sus atributos
+                var allButtons = document.querySelectorAll('button');
+                var buttonInfo = [];
+
+                for (var i = 0; i < Math.min(allButtons.length, 50); i++) {
+                    var btn = allButtons[i];
+                    if (btn.offsetParent === null) continue; // Skip hidden
+
+                    var info = {
+                        idx: i,
+                        text: (btn.textContent || '').trim().substring(0, 20),
+                        class: (btn.className || '').substring(0, 30),
+                        type: btn.type || '',
+                        onclick: btn.getAttribute('onclick') ? 'yes' : 'no',
+                        dataAttrs: []
+                    };
+
+                    // Capturar data attributes
+                    for (var attr of btn.attributes) {
+                        if (attr.name.startsWith('data-')) {
+                            info.dataAttrs.push(attr.name + '=' + attr.value.substring(0, 20));
                         }
+                    }
+
+                    if (info.dataAttrs.length > 0 || info.onclick === 'yes' || info.text.length > 0) {
+                        buttonInfo.push(info);
                     }
                 }
 
-                // Metodo 2: Buscar en la seccion de slots seleccionados
-                var selectedSlot = document.querySelector('input[name="slot"]:checked');
-                if (selectedSlot) {
-                    var container = selectedSlot.closest('.slot-container, .time-slot, tr, .row, div');
-                    if (container) {
-                        var btn = container.querySelector('button:not([type="button"][data-dir])');
-                        if (btn) {
-                            btn.click();
-                            return 'Method2: Clicked button near selected slot';
-                        }
-                    }
-                }
-
-                // Metodo 3: Buscar boton despues de los controles de cantidad
-                var qtyControls = document.querySelector('button[data-dir="up"]');
-                if (qtyControls) {
-                    var parent = qtyControls.closest('.qty-wrapper, .quantity-controls, .tariff-row, div');
-                    if (parent) {
-                        // Buscar siguiente boton que no sea de cantidad
-                        var allBtns = parent.querySelectorAll('button');
-                        for (var btn of allBtns) {
-                            if (!btn.hasAttribute('data-dir')) {
-                                btn.click();
-                                return 'Method3: Clicked non-qty button in same container';
-                            }
-                        }
-                    }
-                }
-
-                // Metodo 4: Buscar submit button que no sea de busqueda
-                var submits = document.querySelectorAll('button[type="submit"]');
-                for (var btn of submits) {
-                    if (btn.getAttribute('alt') !== 'Search' && btn.offsetParent !== null) {
-                        var text = btn.textContent || '';
-                        if (!text.toLowerCase().includes('search')) {
-                            btn.click();
-                            return 'Method4: Clicked submit: ' + text.substring(0, 20);
-                        }
-                    }
-                }
-
-                return 'No method worked';
+                return JSON.stringify(buttonInfo.slice(0, 10));
             """)
-            print(f"[Flow] Add to cart result: {add_cart_result}")
+            print(f"[Flow] Button analysis: {add_cart_result[:500] if add_cart_result else 'None'}")
+        except Exception as e:
+            print(f"[Flow] Error analizando botones: {e}")
+
+        # 7d. Intentar click en boton con data-action o similar
+        print("[Flow] Intentando click en boton de accion...")
+        try:
+            click_result = driver.execute_script("""
+                // Buscar botones con data attributes de accion
+                var actionButtons = document.querySelectorAll('button[data-action], button[data-add], button[data-submit], a[data-action]');
+                if (actionButtons.length > 0) {
+                    actionButtons[0].click();
+                    return 'Clicked data-action button';
+                }
+
+                // Buscar por clase que contenga 'add' o 'submit' o 'buy'
+                var classButtons = document.querySelectorAll('button[class*="add"], button[class*="submit"], button[class*="buy"], button[class*="cart"]');
+                for (var btn of classButtons) {
+                    if (btn.offsetParent !== null && !btn.hasAttribute('data-dir')) {
+                        btn.click();
+                        return 'Clicked class button: ' + btn.className;
+                    }
+                }
+
+                // Buscar el boton principal de la pagina (generalmente el mas grande o con estilo primario)
+                var primaryBtns = document.querySelectorAll('.btn-primary, .primary-button, button.main, button.submit');
+                for (var btn of primaryBtns) {
+                    if (btn.offsetParent !== null) {
+                        btn.click();
+                        return 'Clicked primary button';
+                    }
+                }
+
+                return 'No action button found';
+            """)
+            print(f"[Flow] Click result: {click_result}")
             time.sleep(10)
         except Exception as e:
-            print(f"[Flow] No se pudo agregar al carrito: {e}")
+            print(f"[Flow] Error clicking: {e}")
 
         # 8. Manejar posibles alerts
         print("[Flow] Verificando alerts...")
