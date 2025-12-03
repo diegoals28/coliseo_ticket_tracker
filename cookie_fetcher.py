@@ -451,6 +451,69 @@ def complete_booking_flow(driver):
         return False
 
 
+def get_cookies_via_cdp(driver):
+    """Obtiene TODAS las cookies usando Chrome DevTools Protocol"""
+    print("[CDP] Obteniendo cookies via DevTools Protocol...")
+    cookies_found = []
+
+    try:
+        # Metodo 1: Network.getAllCookies (obtiene todas las cookies del navegador)
+        try:
+            result = driver.execute_cdp_cmd('Network.getAllCookies', {})
+            cdp_cookies = result.get('cookies', [])
+            print(f"[CDP] Network.getAllCookies: {len(cdp_cookies)} cookies")
+
+            for c in cdp_cookies:
+                cookies_found.append({
+                    'name': c.get('name'),
+                    'value': c.get('value'),
+                    'domain': c.get('domain', '.colosseo.it'),
+                    'path': c.get('path', '/'),
+                    'secure': c.get('secure', False),
+                    'httpOnly': c.get('httpOnly', False)
+                })
+                print(f"  - {c.get('name')} (httpOnly: {c.get('httpOnly', False)})")
+        except Exception as e:
+            print(f"[CDP] Error Network.getAllCookies: {e}")
+
+        # Metodo 2: Storage.getCookies para dominio especifico
+        try:
+            result = driver.execute_cdp_cmd('Storage.getCookies', {
+                'browserContextId': None
+            })
+            storage_cookies = result.get('cookies', [])
+            print(f"[CDP] Storage.getCookies: {len(storage_cookies)} cookies")
+        except Exception as e:
+            print(f"[CDP] Storage.getCookies no disponible: {e}")
+
+        # Metodo 3: Page.getCookies (cookies de la pagina actual)
+        try:
+            result = driver.execute_cdp_cmd('Page.getCookies', {})
+            page_cookies = result.get('cookies', [])
+            print(f"[CDP] Page.getCookies: {len(page_cookies)} cookies")
+
+            # Agregar las que no tengamos
+            existing_names = {c['name'] for c in cookies_found}
+            for c in page_cookies:
+                if c.get('name') not in existing_names:
+                    cookies_found.append({
+                        'name': c.get('name'),
+                        'value': c.get('value'),
+                        'domain': c.get('domain', '.colosseo.it'),
+                        'path': c.get('path', '/'),
+                        'secure': c.get('secure', False),
+                        'httpOnly': c.get('httpOnly', False)
+                    })
+                    print(f"  + {c.get('name')} (from Page.getCookies)")
+        except Exception as e:
+            print(f"[CDP] Page.getCookies no disponible: {e}")
+
+    except Exception as e:
+        print(f"[CDP] Error general: {e}")
+
+    return cookies_found
+
+
 def get_cookies_from_network_logs(driver):
     """Extrae cookies HttpOnly de los logs de red de Chrome"""
     import json as json_module
@@ -517,26 +580,30 @@ def get_cookies(driver):
     except:
         pass
 
-    # Primero intentar obtener cookies de los logs de red (incluye HttpOnly)
+    # METODO 1: CDP - obtiene TODAS las cookies incluyendo HttpOnly
+    cdp_cookies = get_cookies_via_cdp(driver)
+
+    # METODO 2: Network logs (backup)
     network_cookies = get_cookies_from_network_logs(driver)
 
+    # METODO 3: Selenium standard (backup)
     cookies = driver.get_cookies()
     print(f"[Cookies] Obtenidas {len(cookies)} cookies via driver.get_cookies()")
 
-    # Debug: mostrar TODAS las cookies
-    print("[Debug] Todas las cookies:")
+    # Debug: mostrar cookies del driver
+    print("[Debug] Cookies de driver.get_cookies():")
     for c in cookies:
         print(f"  - {c['name']} (domain: {c.get('domain', 'N/A')})")
 
-    # Filtrar cookies relevantes (incluir PHPSESSID y otras importantes)
+    # PRIORIDAD 1: Usar cookies de CDP (incluye HttpOnly)
     relevant = []
     important_names = ['PHPSESSID', 'octofence', 'waap']
 
-    for c in cookies:
+    # Filtrar cookies CDP relevantes
+    for c in cdp_cookies:
         domain = c.get('domain', '')
         name = c.get('name', '')
 
-        # Incluir si: dominio colosseo, o nombre contiene octofence/waap, o es PHPSESSID
         is_relevant = (
             'colosseo' in domain or
             'ticketing' in domain or
@@ -544,6 +611,23 @@ def get_cookies(driver):
         )
 
         if is_relevant:
+            relevant.append(c)
+
+    print(f"[Cookies] Relevantes de CDP: {len(relevant)}")
+
+    # PRIORIDAD 2: Agregar cookies del driver que no esten en CDP
+    existing_names = {c['name'] for c in relevant}
+    for c in cookies:
+        domain = c.get('domain', '')
+        name = c.get('name', '')
+
+        is_relevant = (
+            'colosseo' in domain or
+            'ticketing' in domain or
+            any(imp in name.lower() for imp in important_names)
+        )
+
+        if is_relevant and name not in existing_names:
             relevant.append({
                 'name': c['name'],
                 'value': c['value'],
@@ -552,12 +636,9 @@ def get_cookies(driver):
                 'secure': c.get('secure', False),
                 'httpOnly': c.get('httpOnly', False)
             })
+            print(f"  + {name} (from driver)")
 
-    print(f"[Cookies] Relevantes del driver: {len(relevant)}")
-    for c in relevant:
-        print(f"  - {c['name']}")
-
-    # Agregar cookies de network logs que no esten ya en relevant
+    # PRIORIDAD 3: Agregar cookies de network logs
     existing_names = {c['name'] for c in relevant}
     for name, value in network_cookies.items():
         if name not in existing_names:
@@ -572,6 +653,15 @@ def get_cookies(driver):
             print(f"  + {name} (from network logs)")
 
     print(f"[Cookies] Total combinadas: {len(relevant)}")
+
+    # Mostrar resumen de cookies criticas
+    cookie_names = [c['name'] for c in relevant]
+    critical = ['PHPSESSID', 'octofence-waap-id', 'octofence-waap-sessid']
+    print("[Cookies] Cookies criticas:")
+    for crit in critical:
+        found = crit in cookie_names
+        print(f"  - {crit}: {'SI' if found else 'NO'}")
+
     return relevant
 
 
