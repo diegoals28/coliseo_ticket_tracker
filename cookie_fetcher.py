@@ -1233,31 +1233,41 @@ def fetch_availability_from_browser(driver):
             print(f"  - Mes {mes}...", end=" ")
 
             try:
+                # Usar XMLHttpRequest en lugar de fetch para mejor compatibilidad
                 result = driver.execute_script(f"""
                     return new Promise((resolve) => {{
-                        var formData = new FormData();
-                        formData.append('action', 'mtajax_calendars_month');
-                        formData.append('guids[entranceEvent_guid][]', '{tour_info["guid"]}');
-                        formData.append('singleDaySession', 'false');
-                        formData.append('month', {int(month)});
-                        formData.append('year', {int(year)});
+                        var xhr = new XMLHttpRequest();
+                        xhr.open('POST', 'https://ticketing.colosseo.it/mtajax/calendars_month', true);
+                        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+                        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                        xhr.withCredentials = true;
 
-                        fetch('https://ticketing.colosseo.it/mtajax/calendars_month', {{
-                            method: 'POST',
-                            body: formData,
-                            credentials: 'include'
-                        }})
-                        .then(r => r.json())
-                        .then(data => {{
-                            if (data && data.timeslots) {{
-                                resolve({{success: true, timeslots: data.timeslots}});
-                            }} else if (data && data.message) {{
-                                resolve({{success: false, error: data.message}});
-                            }} else {{
-                                resolve({{success: false, error: 'Unknown', keys: Object.keys(data || {{}})}});
+                        xhr.onload = function() {{
+                            try {{
+                                var data = JSON.parse(xhr.responseText);
+                                if (data && data.timeslots) {{
+                                    resolve({{success: true, timeslots: data.timeslots}});
+                                }} else if (data && data.message) {{
+                                    resolve({{success: false, error: data.message, status: xhr.status}});
+                                }} else {{
+                                    resolve({{success: false, error: 'Unknown response', keys: Object.keys(data || {{}}), status: xhr.status}});
+                                }}
+                            }} catch(e) {{
+                                resolve({{success: false, error: 'Parse error: ' + xhr.responseText.substring(0, 100), status: xhr.status}});
                             }}
-                        }})
-                        .catch(e => resolve({{success: false, error: e.message}}));
+                        }};
+
+                        xhr.onerror = function() {{
+                            resolve({{success: false, error: 'Network error', status: xhr.status}});
+                        }};
+
+                        var params = 'action=midaabc_calendars_month' +
+                                    '&guids[entranceEvent_guid][]={tour_info["guid"]}' +
+                                    '&year={int(year)}' +
+                                    '&month={int(month)}' +
+                                    '&day=';
+
+                        xhr.send(params);
                     }});
                 """)
 
