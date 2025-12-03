@@ -1190,6 +1190,11 @@ def fetch_availability_from_browser(driver):
     """
     print("\n[Availability] Consultando disponibilidad desde el navegador...")
 
+    # Primero navegar a la página del tour para tener el contexto correcto
+    print("[Availability] Navegando a pagina del tour...")
+    driver.get("https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-palatino-gruppi/")
+    time.sleep(3)
+
     TOURS = {
         "24h-grupos": {
             "nombre": "24h Colosseo, Foro Romano y Palatino - GRUPOS",
@@ -1237,7 +1242,7 @@ def fetch_availability_from_browser(driver):
                         formData.append('month', {int(month)});
                         formData.append('year', {int(year)});
 
-                        fetch('/mtajax/calendars_month', {{
+                        fetch('https://ticketing.colosseo.it/mtajax/calendars_month', {{
                             method: 'POST',
                             body: formData,
                             credentials: 'include'
@@ -1376,18 +1381,14 @@ def main():
             else:
                 print("[Warning] Faltan algunas cookies criticas, pero intentando guardar...")
 
-            # NUEVO: Probar que las cookies funcionan para consultar la API
-            api_works = test_api_with_cookies(driver, cookies)
-            if api_works:
-                print("[API Test] Las cookies funcionan correctamente!")
-
-                # Consultar disponibilidad completa desde el navegador
-                # Esto evita el problema de fingerprinting de Octofence
-                availability = fetch_availability_from_browser(driver)
-                if availability:
-                    save_availability_to_supabase(availability)
+            # Consultar disponibilidad completa desde el navegador
+            # Esto evita el problema de fingerprinting de Octofence
+            print("\n[Availability] Iniciando consulta de disponibilidad...")
+            availability = fetch_availability_from_browser(driver)
+            if availability:
+                save_availability_to_supabase(availability)
             else:
-                print("[API Test] Las cookies no funcionan para la API")
+                print("[Availability] No se pudo obtener disponibilidad")
 
             # Guardar cookies en Supabase
             save_to_supabase(cookies)
