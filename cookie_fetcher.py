@@ -219,6 +219,33 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] Error verificando carrito: {e}")
 
+        # 6. Forzar peticion AJAX al calendario para generar cookies de sesion
+        print("[Flow] Forzando peticion AJAX al calendario...")
+        try:
+            ajax_result = driver.execute_script("""
+                return new Promise((resolve) => {
+                    var formData = new FormData();
+                    formData.append('action', 'mtajax_calendars_month');
+                    formData.append('guids[entranceEvent_guid][]', 'a9a4b0f8-bf3c-4f22-afcd-196a27be04b9');
+                    formData.append('singleDaySession', 'false');
+                    formData.append('month', new Date().getMonth() + 1);
+                    formData.append('year', new Date().getFullYear());
+
+                    fetch('/mtajax/calendars_month', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'include'
+                    })
+                    .then(r => r.text())
+                    .then(t => resolve('OK: ' + t.substring(0, 100)))
+                    .catch(e => resolve('Error: ' + e.message));
+                });
+            """)
+            print(f"[Flow] AJAX result: {ajax_result[:100] if ajax_result else 'None'}")
+            time.sleep(3)
+        except Exception as e:
+            print(f"[Flow] Error AJAX: {e}")
+
         return True
 
     except Exception as e:
@@ -228,6 +255,17 @@ def complete_booking_flow(driver):
 
 def get_cookies(driver):
     """Obtiene todas las cookies del navegador"""
+    # Verificar contenido de la pagina actual
+    try:
+        page_source = driver.page_source
+        print(f"[Debug] Page length: {len(page_source)}")
+        if 'empty' in page_source.lower() or 'vacío' in page_source.lower() or 'vuoto' in page_source.lower():
+            print("[Debug] El carrito parece estar vacio")
+        if 'cart' in page_source.lower() or 'carrello' in page_source.lower():
+            print("[Debug] Pagina contiene referencia a carrito")
+    except:
+        pass
+
     cookies = driver.get_cookies()
     print(f"[Cookies] Obtenidas {len(cookies)} cookies totales")
 
