@@ -217,43 +217,60 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] No se pudo incrementar: {e}")
 
-        # 6. Debug: ver estado del formulario antes de submit
-        print("[Flow] Verificando estado del formulario...")
+        # 6. Debug: ver todos los formularios
+        print("[Flow] Analizando formularios en la pagina...")
         try:
-            form_data = driver.execute_script("""
-                var form = document.querySelector('form');
-                if (!form) return 'No form found';
-                var data = new FormData(form);
-                var result = [];
-                for (var pair of data.entries()) {
-                    result.push(pair[0] + '=' + pair[1]);
-                }
-                return result.join(', ');
+            forms_info = driver.execute_script("""
+                var forms = document.querySelectorAll('form');
+                var info = [];
+                forms.forEach(function(form, idx) {
+                    var action = form.action || 'no-action';
+                    var id = form.id || 'no-id';
+                    var inputs = form.querySelectorAll('input, select, button').length;
+                    info.push('Form' + idx + ': id=' + id + ', action=' + action.substring(0,50) + ', inputs=' + inputs);
+                });
+                return info.join(' | ');
             """)
-            print(f"[Flow] Form data: {form_data[:200] if form_data else 'None'}")
+            print(f"[Flow] Forms: {forms_info[:300] if forms_info else 'None'}")
         except Exception as e:
-            print(f"[Flow] Error verificando form: {e}")
+            print(f"[Flow] Error analizando forms: {e}")
 
-        # 7. Agregar al carrito usando JavaScript
-        print("[Flow] Agregando al carrito...")
+        # 7. Buscar el formulario de reserva correcto y hacer submit
+        print("[Flow] Buscando formulario de reserva...")
         try:
-            # Buscar boton submit
-            submit_btns = driver.find_elements(By.CSS_SELECTOR, "button[type='submit'], input[type='submit'], .add-to-cart, .btn-primary")
-            print(f"[Flow] Encontrados {len(submit_btns)} botones submit")
+            # El formulario de reserva debe tener el slot seleccionado
+            add_cart_result = driver.execute_script("""
+                // Buscar formulario que contenga inputs de slot
+                var forms = document.querySelectorAll('form');
+                for (var form of forms) {
+                    var slotInput = form.querySelector('input[name="slot"]:checked');
+                    if (slotInput) {
+                        // Este es el formulario correcto
+                        var submitBtn = form.querySelector('button[type="submit"]:not([alt="Search"]), input[type="submit"]');
+                        if (submitBtn) {
+                            submitBtn.click();
+                            return 'Clicked submit in form with slot';
+                        } else {
+                            form.submit();
+                            return 'Submitted form with slot directly';
+                        }
+                    }
+                }
 
-            if submit_btns:
-                submit = submit_btns[0]
-                print(f"[Flow] Boton: {submit.get_attribute('outerHTML')[:100]}")
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit)
-                time.sleep(0.5)
+                // Alternativa: buscar boton con texto "Add" o "Cart"
+                var buttons = document.querySelectorAll('button, input[type="submit"]');
+                for (var btn of buttons) {
+                    var text = (btn.textContent || btn.value || '').toLowerCase();
+                    if (text.includes('add') || text.includes('cart') || text.includes('carrello') || text.includes('acquista')) {
+                        btn.click();
+                        return 'Clicked button: ' + text.substring(0, 30);
+                    }
+                }
 
-                # Intentar submit del form directamente
-                driver.execute_script("""
-                    var form = document.querySelector('form');
-                    if (form) form.submit();
-                """)
-                print("[Flow] Form submitted via JS")
-                time.sleep(8)
+                return 'No suitable form/button found';
+            """)
+            print(f"[Flow] Add to cart result: {add_cart_result}")
+            time.sleep(8)
         except Exception as e:
             print(f"[Flow] No se pudo agregar al carrito: {e}")
 
