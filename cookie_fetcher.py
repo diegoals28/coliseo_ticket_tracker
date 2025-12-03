@@ -85,6 +85,52 @@ def wait_for_octofence(driver, timeout=120):
     return False
 
 
+def accept_cookies_banner(driver):
+    """Acepta el banner de cookies si aparece"""
+    from selenium.webdriver.common.by import By
+
+    print("[Banner] Buscando banner de cookies...")
+    try:
+        # Buscar boton de aceptar cookies
+        accept_selectors = [
+            "button#cookie_action_close_header",
+            "a.cli_action_button.cli-accept-all-btn",
+            "button.cli-accept-btn",
+            "[data-cli_action='accept_all']",
+            ".cookie-law-info-accept"
+        ]
+
+        for selector in accept_selectors:
+            try:
+                btn = driver.find_element(By.CSS_SELECTOR, selector)
+                if btn.is_displayed():
+                    driver.execute_script("arguments[0].click();", btn)
+                    print(f"[Banner] Cookies aceptadas con: {selector}")
+                    time.sleep(1)
+                    return True
+            except:
+                continue
+
+        # Intentar con JavaScript directo
+        driver.execute_script("""
+            var btns = document.querySelectorAll('button, a');
+            for (var b of btns) {
+                var txt = b.textContent.toLowerCase();
+                if (txt.includes('accept') || txt.includes('aceptar') || txt.includes('accetta')) {
+                    b.click();
+                    return;
+                }
+            }
+        """)
+        print("[Banner] Intentado aceptar via JS")
+        time.sleep(1)
+        return True
+
+    except Exception as e:
+        print(f"[Banner] No encontrado o error: {e}")
+        return False
+
+
 def complete_booking_flow(driver):
     """Completa el flujo de reserva para generar cookies de sesion"""
     from selenium.webdriver.common.by import By
@@ -94,47 +140,65 @@ def complete_booking_flow(driver):
     print("[Flow] Iniciando flujo de reserva...")
 
     try:
+        # Primero aceptar banner de cookies
+        accept_cookies_banner(driver)
+        time.sleep(2)
+
         wait = WebDriverWait(driver, 15)
 
-        # 1. Click en dia disponible del calendario
+        # 1. Click en dia disponible del calendario usando JavaScript
         print("[Flow] Buscando dia en calendario...")
         try:
-            day = wait.until(EC.element_to_be_clickable(
+            # Scroll al calendario primero
+            driver.execute_script("window.scrollTo(0, 300);")
+            time.sleep(1)
+
+            day = wait.until(EC.presence_of_element_located(
                 (By.CSS_SELECTOR, ".ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a")))
-            day.click()
+
+            # Scroll al elemento y click con JS
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", day)
+            time.sleep(0.5)
+            driver.execute_script("arguments[0].click();", day)
             print("[Flow] Dia seleccionado")
             time.sleep(3)
         except Exception as e:
             print(f"[Flow] No se pudo seleccionar dia: {e}")
 
-        # 2. Click en horario
+        # 2. Click en horario usando JavaScript
         print("[Flow] Buscando horario...")
         try:
-            slot = wait.until(EC.element_to_be_clickable(
+            slot = wait.until(EC.presence_of_element_located(
                 (By.CSS_SELECTOR, "input[name='slot']")))
-            slot.click()
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", slot)
+            time.sleep(0.5)
+            driver.execute_script("arguments[0].click();", slot)
             print("[Flow] Horario seleccionado")
             time.sleep(2)
         except Exception as e:
             print(f"[Flow] No se pudo seleccionar horario: {e}")
 
-        # 3. Incrementar cantidad
+        # 3. Incrementar cantidad usando JavaScript
         print("[Flow] Incrementando cantidad...")
         try:
             plus_btn = driver.find_element(By.CSS_SELECTOR, "button[data-dir='up']")
-            plus_btn.click()
-            time.sleep(1)
-            plus_btn.click()
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", plus_btn)
+            time.sleep(0.5)
+            driver.execute_script("arguments[0].click();", plus_btn)
+            time.sleep(0.5)
+            driver.execute_script("arguments[0].click();", plus_btn)
             print("[Flow] Cantidad incrementada")
             time.sleep(2)
         except Exception as e:
             print(f"[Flow] No se pudo incrementar: {e}")
 
-        # 4. Agregar al carrito
+        # 4. Agregar al carrito usando JavaScript
         print("[Flow] Agregando al carrito...")
         try:
             submit = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-            submit.click()
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit)
+            time.sleep(0.5)
+            driver.execute_script("arguments[0].click();", submit)
             print("[Flow] Agregado al carrito")
             time.sleep(5)
         except Exception as e:
