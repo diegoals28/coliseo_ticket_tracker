@@ -1097,6 +1097,41 @@ def proxy_save():
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
 
+@app.route('/api/debug/proxy', methods=['GET'])
+def debug_proxy():
+    """
+    Endpoint de diagnóstico para verificar configuración de proxy Webshare.
+
+    Returns:
+        JSON con estado del proxy
+    """
+    from api_client import get_webshare_proxy
+
+    webshare = get_webshare_proxy()
+
+    result = {
+        "webshare_configured": webshare is not None,
+        "webshare_proxy": None,
+        "env_vars": {
+            "WEBSHARE_PROXY": bool(os.getenv("WEBSHARE_PROXY", "").strip()),
+            "WEBSHARE_HOST": bool(os.getenv("WEBSHARE_HOST", "").strip()),
+            "WEBSHARE_PORT": bool(os.getenv("WEBSHARE_PORT", "").strip()),
+        }
+    }
+
+    if webshare:
+        # Mostrar proxy parcialmente oculto
+        proxy_url = webshare.get("http", "")
+        if "@" in proxy_url:
+            # Ocultar credenciales
+            parts = proxy_url.split("@")
+            result["webshare_proxy"] = f"http://***:***@{parts[1]}"
+        else:
+            result["webshare_proxy"] = proxy_url
+
+    return jsonify(result)
+
+
 # Para Vercel - exportar la app
 application = app
 
