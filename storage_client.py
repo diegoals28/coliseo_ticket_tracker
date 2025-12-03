@@ -178,7 +178,8 @@ def get_auto_cookies() -> dict:
                 'success': True,
                 'cookies': data.get('cookies', []),
                 'timestamp': data.get('timestamp', ''),
-                'source': data.get('source', 'unknown')
+                'source': data.get('source', 'unknown'),
+                'proxy': data.get('proxy')  # Incluir proxy si está disponible
             }
 
         except Exception as e:

@@ -1084,10 +1084,21 @@ def save_to_supabase(cookies):
 
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+        # Incluir info del proxy usado para que Vercel use el mismo
+        proxy_info = None
+        if PROXY_HOST and PROXY_PORT:
+            proxy_info = {
+                "host": PROXY_HOST,
+                "port": PROXY_PORT,
+                "user": PROXY_USER if PROXY_USER else None,
+                "url": f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}" if PROXY_USER else f"http://{PROXY_HOST}:{PROXY_PORT}"
+            }
+
         data = {
             "cookies": cookies,
             "timestamp": datetime.now().isoformat(),
-            "source": "railway-uc"
+            "source": "railway-uc",
+            "proxy": proxy_info
         }
 
         cookies_json = json.dumps(data, indent=2).encode('utf-8')
