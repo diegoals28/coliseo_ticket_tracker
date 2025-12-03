@@ -385,7 +385,14 @@ def query_calendar(guid, month, year):
             return None, "No hay driver disponible"
 
     try:
-        # Hacer la consulta AJAX desde el navegador
+        # Asegurar que estamos en el dominio correcto
+        current_url = driver.current_url
+        if 'ticketing.colosseo.it' not in current_url:
+            print("[Query] Navegando al sitio...")
+            driver.get(TOUR_URL)
+            time.sleep(3)
+
+        # Hacer la consulta AJAX con URL absoluta
         result = driver.execute_script("""
             return new Promise((resolve) => {
                 var formData = new FormData();
@@ -395,7 +402,7 @@ def query_calendar(guid, month, year):
                 formData.append('month', arguments[1]);
                 formData.append('year', arguments[2]);
 
-                fetch('/mtajax/calendars_month', {
+                fetch('https://ticketing.colosseo.it/mtajax/calendars_month', {
                     method: 'POST',
                     body: formData,
                     credentials: 'include'
