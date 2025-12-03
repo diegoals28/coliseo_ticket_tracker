@@ -183,46 +183,97 @@ def refresh_cookies():
 
         # Seleccionar día del calendario
         print("[Cookies] Seleccionando día...")
-        driver.execute_script("""
+        day_result = driver.execute_script("""
             var days = document.querySelectorAll('.ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a');
-            if (days.length > 0) { days[0].click(); }
+            if (days.length > 0) {
+                days[0].scrollIntoView({block: 'center'});
+                days[0].click();
+                return 'clicked day ' + days[0].textContent;
+            }
+            return 'no days found';
         """)
+        print(f"[Cookies] Day result: {day_result}")
         time.sleep(4)
 
         # Seleccionar horario
         print("[Cookies] Seleccionando horario...")
-        driver.execute_script("""
+        slot_result = driver.execute_script("""
             var slots = document.querySelectorAll('input[name="slot"]');
-            if (slots.length > 0) { slots[0].click(); }
+            if (slots.length > 0) {
+                slots[0].scrollIntoView({block: 'center'});
+                slots[0].click();
+                return 'clicked slot, total: ' + slots.length;
+            }
+            return 'no slots found';
         """)
+        print(f"[Cookies] Slot result: {slot_result}")
         time.sleep(3)
 
-        # Incrementar cantidad
+        # Incrementar cantidad varias veces
         print("[Cookies] Incrementando cantidad...")
-        driver.execute_script("""
-            var plusBtns = document.querySelectorAll('button[data-dir="up"]');
-            if (plusBtns.length > 0) { plusBtns[0].click(); }
+        for i in range(3):
+            driver.execute_script("""
+                var plusBtns = document.querySelectorAll('button[data-dir="up"]');
+                if (plusBtns.length > 0) { plusBtns[0].click(); }
+            """)
+            time.sleep(0.5)
+
+        qty_result = driver.execute_script("""
+            var inputs = document.querySelectorAll('input[type="number"]');
+            var total = 0;
+            for (var inp of inputs) { total += parseInt(inp.value) || 0; }
+            return total;
         """)
+        print(f"[Cookies] Cantidad total: {qty_result}")
         time.sleep(2)
 
-        # Click en Confirm
+        # Click en Confirm - buscar más opciones
         print("[Cookies] Buscando Confirm...")
         confirm_result = driver.execute_script("""
+            // Opción 1: input[type=submit] con value Confirm
             var submits = document.querySelectorAll('input[type="submit"]');
             for (var s of submits) {
-                if (s.value.toLowerCase() === 'confirm' && s.offsetParent !== null) {
-                    s.click(); return 'clicked';
+                var val = (s.value || '').toLowerCase();
+                if (val === 'confirm' || val === 'conferma') {
+                    s.scrollIntoView({block: 'center'});
+                    s.click();
+                    return 'clicked submit: ' + s.value;
                 }
             }
-            // Fallback: ir al carrito
-            var cartLinks = document.querySelectorAll('a[href*="/cart"]');
-            for (var l of cartLinks) {
-                if (l.offsetParent !== null) { l.click(); return 'cart_link'; }
+
+            // Opción 2: cualquier submit que no sea search
+            for (var s of submits) {
+                var val = (s.value || '').toLowerCase();
+                if (val && val !== 'search' && val !== 'cerca' && s.offsetParent !== null) {
+                    s.scrollIntoView({block: 'center'});
+                    s.click();
+                    return 'clicked other submit: ' + s.value;
+                }
             }
-            return 'not_found';
+
+            // Opción 3: botón con texto add/book/cart
+            var buttons = document.querySelectorAll('button:not([data-dir])');
+            for (var b of buttons) {
+                var txt = (b.textContent || '').toLowerCase();
+                if ((txt.includes('add') || txt.includes('book') || txt.includes('cart')) && b.offsetParent !== null) {
+                    b.click();
+                    return 'clicked button: ' + txt.substring(0, 20);
+                }
+            }
+
+            // Debug: listar submits disponibles
+            var info = [];
+            for (var s of submits) {
+                info.push(s.value + '|visible:' + (s.offsetParent !== null));
+            }
+            return 'not_found. submits: ' + info.join(', ');
         """)
         print(f"[Cookies] Confirm result: {confirm_result}")
         time.sleep(3)
+
+        # Si no encontramos confirm, navegar al carrito de todas formas
+        current_url = driver.current_url
+        print(f"[Cookies] URL actual: {current_url}")
 
         # Navegar al carrito final
         print("[Cookies] Navegando al carrito...")
