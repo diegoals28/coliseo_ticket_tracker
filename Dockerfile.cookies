@@ -1,0 +1,51 @@
+# Dockerfile para obtener cookies con undetected-chromedriver
+FROM python:3.11-slim
+
+# Instalar Chrome y dependencias
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    unzip \
+    xvfb \
+    libgconf-2-4 \
+    libxss1 \
+    libnss3 \
+    libnspr4 \
+    libasound2 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar Chrome
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+# Crear directorio de trabajo
+WORKDIR /app
+
+# Copiar requirements
+COPY requirements-cookies.txt .
+RUN pip install --no-cache-dir -r requirements-cookies.txt
+
+# Copiar script
+COPY cookie_fetcher.py .
+
+# Variables de entorno
+ENV DISPLAY=:99
+ENV PYTHONUNBUFFERED=1
+
+# Script de inicio
+CMD ["python", "cookie_fetcher.py"]
