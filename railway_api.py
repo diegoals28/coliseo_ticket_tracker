@@ -275,6 +275,26 @@ def refresh_cookies():
         current_url = driver.current_url
         print(f"[Cookies] URL actual: {current_url}")
 
+        # RETRY: Buscar link al carrito y clickearlo (esto genera las cookies!)
+        if 'cart' not in current_url:
+            print("[Cookies] RETRY: Buscando link al carrito...")
+            time.sleep(2)
+            retry_result = driver.execute_script("""
+                // Buscar links al carrito/checkout
+                var checkoutLinks = document.querySelectorAll('a[href*="checkout"], a[href*="cart"]');
+                for (var link of checkoutLinks) {
+                    var text = (link.textContent || '').toLowerCase();
+                    if (!text.includes('empty') && !text.includes('shopping') && link.offsetParent !== null) {
+                        link.click();
+                        return 'Clicked cart link: ' + text.substring(0, 30);
+                    }
+                }
+                return 'No cart link found';
+            """)
+            print(f"[Cookies] Retry result: {retry_result}")
+            time.sleep(5)
+            print(f"[Cookies] URL after retry: {driver.current_url}")
+
         # Navegar al carrito final
         print("[Cookies] Navegando al carrito...")
         driver.get("https://ticketing.colosseo.it/en/cart/")
