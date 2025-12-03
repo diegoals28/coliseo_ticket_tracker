@@ -147,24 +147,72 @@ def complete_booking_flow(driver):
         accept_cookies_banner(driver)
         time.sleep(2)
 
-        wait = WebDriverWait(driver, 15)
+        # ESTRATEGIA 1: Ir directamente al carrito para forzar sesion
+        print("[Flow] Estrategia 1: Visitar carrito para crear sesion...")
+        try:
+            driver.get("https://ticketing.colosseo.it/en/cart/")
+            time.sleep(5)
+            print(f"[Flow] URL carrito: {driver.current_url}")
+        except Exception as e:
+            print(f"[Flow] Error visitando carrito: {e}")
+
+        # Volver a la pagina del tour
+        print("[Flow] Volviendo a pagina del tour...")
+        driver.get("https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-palatino-gruppi/")
+        time.sleep(5)
+
+        # Esperar a que el calendario este visible
+        print("[Flow] Esperando calendario...")
+        wait = WebDriverWait(driver, 30)
 
         # 1. Click en dia disponible del calendario usando JavaScript
         print("[Flow] Buscando dia en calendario...")
         try:
+            # Esperar a que el calendario se cargue completamente
+            time.sleep(3)
+
             # Scroll al calendario primero
             driver.execute_script("window.scrollTo(0, 300);")
-            time.sleep(1)
+            time.sleep(2)
 
-            day = wait.until(EC.presence_of_element_located(
-                (By.CSS_SELECTOR, ".ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a")))
+            # Intentar encontrar un dia disponible con multiples selectores
+            day_selectors = [
+                ".ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a",
+                ".ui-datepicker-calendar td.available a",
+                ".ui-datepicker-calendar td a.ui-state-default",
+                "td.abc-availability-available a"
+            ]
 
-            # Scroll al elemento y click con JS
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", day)
-            time.sleep(0.5)
-            driver.execute_script("arguments[0].click();", day)
-            print("[Flow] Dia seleccionado")
-            time.sleep(3)
+            day = None
+            for selector in day_selectors:
+                try:
+                    day = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
+                    if day:
+                        print(f"[Flow] Dia encontrado con selector: {selector}")
+                        break
+                except:
+                    continue
+
+            if day:
+                # Scroll al elemento y click con JS
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", day)
+                time.sleep(1)
+                driver.execute_script("arguments[0].click();", day)
+                print("[Flow] Dia seleccionado")
+                time.sleep(4)
+            else:
+                # Intentar con JavaScript directo
+                print("[Flow] Intentando seleccionar dia via JS...")
+                result = driver.execute_script("""
+                    var days = document.querySelectorAll('.ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a');
+                    if (days.length > 0) {
+                        days[0].click();
+                        return 'Clicked day ' + days[0].textContent;
+                    }
+                    return 'No days found';
+                """)
+                print(f"[Flow] JS result: {result}")
+                time.sleep(4)
         except Exception as e:
             print(f"[Flow] No se pudo seleccionar dia: {e}")
 
@@ -417,9 +465,10 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] Error verificando carrito: {e}")
 
-        # 6. Forzar peticion AJAX al calendario para generar cookies de sesion
-        print("[Flow] Forzando peticion AJAX al calendario...")
+        # 6. Forzar multiples peticiones AJAX para generar cookies de sesion
+        print("[Flow] Forzando peticiones AJAX...")
         try:
+            # Llamada al calendario
             ajax_result = driver.execute_script("""
                 return new Promise((resolve) => {
                     var formData = new FormData();
@@ -435,12 +484,47 @@ def complete_booking_flow(driver):
                         credentials: 'include'
                     })
                     .then(r => r.text())
-                    .then(t => resolve('OK: ' + t.substring(0, 100)))
+                    .then(t => resolve('Calendar: ' + t.substring(0, 50)))
                     .catch(e => resolve('Error: ' + e.message));
                 });
             """)
-            print(f"[Flow] AJAX result: {ajax_result[:100] if ajax_result else 'None'}")
-            time.sleep(3)
+            print(f"[Flow] AJAX calendar: {ajax_result[:80] if ajax_result else 'None'}")
+            time.sleep(2)
+
+            # Llamada al carrito
+            cart_result = driver.execute_script("""
+                return new Promise((resolve) => {
+                    fetch('/en/cart/', {
+                        method: 'GET',
+                        credentials: 'include'
+                    })
+                    .then(r => r.text())
+                    .then(t => resolve('Cart loaded: ' + t.length + ' chars'))
+                    .catch(e => resolve('Error: ' + e.message));
+                });
+            """)
+            print(f"[Flow] AJAX cart: {cart_result[:80] if cart_result else 'None'}")
+            time.sleep(2)
+
+            # Llamada a wp-admin/admin-ajax.php (endpoint comun de WordPress)
+            wp_result = driver.execute_script("""
+                return new Promise((resolve) => {
+                    var formData = new FormData();
+                    formData.append('action', 'abc_get_cart');
+
+                    fetch('/wp-admin/admin-ajax.php', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'include'
+                    })
+                    .then(r => r.text())
+                    .then(t => resolve('WP: ' + t.substring(0, 50)))
+                    .catch(e => resolve('Error: ' + e.message));
+                });
+            """)
+            print(f"[Flow] AJAX wp: {wp_result[:80] if wp_result else 'None'}")
+            time.sleep(2)
+
         except Exception as e:
             print(f"[Flow] Error AJAX: {e}")
 
