@@ -1246,14 +1246,21 @@ def fetch_availability_from_browser(driver):
                             try:
                                 body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
                                 body_text = body.get('body', '')
+                                print(f"  Body length: {len(body_text)} chars")
 
-                                data = json_module.loads(body_text)
-                                if data and 'timeslots' in data:
-                                    timeslots = data.get('timeslots', [])
-                                    print(f"  Capturados {len(timeslots)} timeslots!")
-                                    tour_data['timeslots'].extend(timeslots)
+                                if body_text:
+                                    data = json_module.loads(body_text)
+                                    print(f"  Response keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
+                                    if data and 'timeslots' in data:
+                                        timeslots = data.get('timeslots', [])
+                                        print(f"  Capturados {len(timeslots)} timeslots!")
+                                        tour_data['timeslots'].extend(timeslots)
+                                    elif data and 'message' in data:
+                                        print(f"  API Error: {data.get('message', '')[:50]}")
+                                else:
+                                    print(f"  Body vacío")
                             except Exception as e:
-                                print(f"  Error obteniendo body: {str(e)[:50]}")
+                                print(f"  Error obteniendo body: {str(e)[:80]}")
 
                 except Exception as e:
                     continue
