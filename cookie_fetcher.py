@@ -235,57 +235,87 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] Error analizando forms: {e}")
 
-        # 7. Buscar el formulario de reserva correcto y hacer submit
-        print("[Flow] Buscando formulario de reserva...")
+        # 7. Agregar al carrito - buscar boton correcto
+        print("[Flow] Buscando boton agregar al carrito...")
         try:
-            # El formulario de reserva debe tener el slot seleccionado
             add_cart_result = driver.execute_script("""
-                // Buscar formulario que contenga inputs de slot
-                var forms = document.querySelectorAll('form');
-                for (var form of forms) {
-                    var slotInput = form.querySelector('input[name="slot"]:checked');
-                    if (slotInput) {
-                        // Este es el formulario correcto
-                        var submitBtn = form.querySelector('button[type="submit"]:not([alt="Search"]), input[type="submit"]');
-                        if (submitBtn) {
-                            submitBtn.click();
-                            return 'Clicked submit in form with slot';
-                        } else {
-                            form.submit();
-                            return 'Submitted form with slot directly';
-                        }
-                    }
-                }
+                // Buscar todos los botones visibles
+                var allButtons = document.querySelectorAll('button, a.btn, input[type="button"]');
+                var candidates = [];
 
-                // Alternativa: buscar boton con texto "Add" o "Cart"
-                var buttons = document.querySelectorAll('button, input[type="submit"]');
-                for (var btn of buttons) {
-                    var text = (btn.textContent || btn.value || '').toLowerCase();
-                    if (text.includes('add') || text.includes('cart') || text.includes('carrello') || text.includes('acquista')) {
+                for (var btn of allButtons) {
+                    var text = (btn.textContent || btn.value || '').toLowerCase().trim();
+                    var classes = btn.className || '';
+                    var isVisible = btn.offsetParent !== null;
+
+                    if (!isVisible) continue;
+
+                    // Excluir botones de busqueda y navegacion
+                    if (text.includes('search') || btn.getAttribute('alt') === 'Search') continue;
+                    if (text.includes('next') || text.includes('prev')) continue;
+
+                    candidates.push({
+                        text: text.substring(0, 50),
+                        classes: classes.substring(0, 50),
+                        tag: btn.tagName
+                    });
+
+                    // Buscar boton de agregar
+                    if (text.includes('add') || text.includes('cart') || text.includes('carrello') ||
+                        text.includes('acquista') || text.includes('aggiungi') || text.includes('compra') ||
+                        classes.includes('add-to-cart') || classes.includes('btn-cart')) {
                         btn.click();
-                        return 'Clicked button: ' + text.substring(0, 30);
+                        return 'Clicked: ' + text.substring(0, 30);
                     }
                 }
 
-                return 'No suitable form/button found';
+                // Si no encontro, buscar por icono de carrito
+                var cartIcons = document.querySelectorAll('button i.fa-shopping-cart, button i.fa-cart-plus, a i.fa-shopping-cart');
+                for (var icon of cartIcons) {
+                    var btn = icon.closest('button') || icon.closest('a');
+                    if (btn) {
+                        btn.click();
+                        return 'Clicked cart icon button';
+                    }
+                }
+
+                return 'Candidates: ' + JSON.stringify(candidates.slice(0, 5));
             """)
             print(f"[Flow] Add to cart result: {add_cart_result}")
-            time.sleep(8)
+            time.sleep(10)
         except Exception as e:
             print(f"[Flow] No se pudo agregar al carrito: {e}")
 
-        # 5. Verificar si navegamos al carrito y obtener mas cookies
+        # 8. Manejar posibles alerts
+        print("[Flow] Verificando alerts...")
+        try:
+            from selenium.webdriver.common.alert import Alert
+            alert = Alert(driver)
+            alert_text = alert.text
+            print(f"[Flow] Alert encontrado: {alert_text}")
+            alert.dismiss()  # Cancelar para no vaciar el carrito
+            print("[Flow] Alert cancelado")
+            time.sleep(2)
+        except:
+            print("[Flow] No hay alerts pendientes")
+
+        # 9. Verificar si navegamos al carrito y obtener mas cookies
         print("[Flow] Verificando navegacion al carrito...")
         try:
             current_url = driver.current_url
             print(f"[Flow] URL actual: {current_url}")
 
-            # Si no estamos en el carrito, navegar directamente
-            if 'cart' not in current_url and 'carrello' not in current_url:
-                print("[Flow] Navegando al carrito directamente...")
-                driver.get("https://ticketing.colosseo.it/en/cart/")
-                time.sleep(5)
-                print(f"[Flow] Nueva URL: {driver.current_url}")
+            # Si estamos en el carrito, bien! Si no, NO navegar para no perder sesion
+            if 'cart' in current_url or 'carrello' in current_url:
+                print("[Flow] Ya estamos en el carrito!")
+            else:
+                print("[Flow] No estamos en carrito, verificando si hay items...")
+                # Verificar si hay indicador de carrito con items
+                cart_count = driver.execute_script("""
+                    var cartBadge = document.querySelector('.cart-count, .badge, .cart-items-count');
+                    return cartBadge ? cartBadge.textContent : '0';
+                """)
+                print(f"[Flow] Items en carrito: {cart_count}")
         except Exception as e:
             print(f"[Flow] Error verificando carrito: {e}")
 
