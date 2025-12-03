@@ -1,0 +1,58 @@
+# Dockerfile para API de consultas con undetected-chromedriver
+FROM python:3.11-slim
+
+# Instalar dependencias del sistema para Chrome
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    unzip \
+    xvfb \
+    libxss1 \
+    libnss3 \
+    libnspr4 \
+    libasound2t64 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libgtk-3-0 \
+    fonts-liberation \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar Chrome desde repositorio oficial
+RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+# Crear directorio de trabajo
+WORKDIR /app
+
+# Copiar requirements e instalar
+COPY requirements-cookies.txt .
+RUN pip install --no-cache-dir -r requirements-cookies.txt
+RUN pip install --no-cache-dir flask
+
+# Copiar script
+COPY railway_api.py .
+
+# Variables de entorno
+ENV DISPLAY=:99
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8080
+
+# Exponer puerto
+EXPOSE 8080
+
+# Iniciar API
+CMD ["python", "railway_api.py"]
