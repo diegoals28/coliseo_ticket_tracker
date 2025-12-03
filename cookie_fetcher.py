@@ -28,7 +28,7 @@ TOUR_URL = "https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-pal
 
 
 def setup_driver():
-    """Configura undetected-chromedriver"""
+    """Configura undetected-chromedriver con network logging"""
     import undetected_chromedriver as uc
 
     options = uc.ChromeOptions()
@@ -38,10 +38,13 @@ def setup_driver():
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--disable-blink-features=AutomationControlled')
 
+    # Habilitar logging de red para capturar cookies HttpOnly
+    options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
+
     # NO usar headless - usar Xvfb en su lugar
     driver = uc.Chrome(options=options, use_subprocess=True)
 
-    print("[Driver] undetected-chromedriver iniciado")
+    print("[Driver] undetected-chromedriver iniciado con network logging")
     return driver
 
 
@@ -448,6 +451,55 @@ def complete_booking_flow(driver):
         return False
 
 
+def get_cookies_from_network_logs(driver):
+    """Extrae cookies HttpOnly de los logs de red de Chrome"""
+    import json as json_module
+
+    print("[Network] Analizando logs de red para cookies HttpOnly...")
+    cookies_found = {}
+
+    try:
+        logs = driver.get_log('performance')
+        print(f"[Network] Procesando {len(logs)} entradas de log...")
+
+        for entry in logs:
+            try:
+                log = json_module.loads(entry['message'])['message']
+
+                # Buscar respuestas con Set-Cookie
+                if log['method'] == 'Network.responseReceivedExtraInfo':
+                    headers = log.get('params', {}).get('headers', {})
+                    for key, value in headers.items():
+                        if key.lower() == 'set-cookie':
+                            # Parsear la cookie
+                            cookie_parts = value.split(';')[0].split('=', 1)
+                            if len(cookie_parts) == 2:
+                                name, val = cookie_parts
+                                cookies_found[name.strip()] = val.strip()
+
+                # Buscar cookies en requests
+                if log['method'] == 'Network.requestWillBeSentExtraInfo':
+                    headers = log.get('params', {}).get('headers', {})
+                    cookie_header = headers.get('Cookie', headers.get('cookie', ''))
+                    if cookie_header:
+                        for cookie_pair in cookie_header.split(';'):
+                            if '=' in cookie_pair:
+                                name, val = cookie_pair.split('=', 1)
+                                cookies_found[name.strip()] = val.strip()
+
+            except Exception as e:
+                continue
+
+        print(f"[Network] Cookies encontradas en logs: {len(cookies_found)}")
+        for name in cookies_found.keys():
+            print(f"  - {name}")
+
+    except Exception as e:
+        print(f"[Network] Error procesando logs: {e}")
+
+    return cookies_found
+
+
 def get_cookies(driver):
     """Obtiene todas las cookies del navegador"""
     # Verificar contenido de la pagina actual
@@ -458,11 +510,18 @@ def get_cookies(driver):
             print("[Debug] El carrito parece estar vacio")
         if 'cart' in page_source.lower() or 'carrello' in page_source.lower():
             print("[Debug] Pagina contiene referencia a carrito")
+
+        # Verificar si hay items en el carrito
+        if 'There\'s an item in your cart' in page_source or 'items in your cart' in page_source:
+            print("[Debug] HAY ITEMS EN EL CARRITO!")
     except:
         pass
 
+    # Primero intentar obtener cookies de los logs de red (incluye HttpOnly)
+    network_cookies = get_cookies_from_network_logs(driver)
+
     cookies = driver.get_cookies()
-    print(f"[Cookies] Obtenidas {len(cookies)} cookies totales")
+    print(f"[Cookies] Obtenidas {len(cookies)} cookies via driver.get_cookies()")
 
     # Debug: mostrar TODAS las cookies
     print("[Debug] Todas las cookies:")
@@ -494,10 +553,25 @@ def get_cookies(driver):
                 'httpOnly': c.get('httpOnly', False)
             })
 
-    print(f"[Cookies] Relevantes: {len(relevant)}")
+    print(f"[Cookies] Relevantes del driver: {len(relevant)}")
     for c in relevant:
         print(f"  - {c['name']}")
 
+    # Agregar cookies de network logs que no esten ya en relevant
+    existing_names = {c['name'] for c in relevant}
+    for name, value in network_cookies.items():
+        if name not in existing_names:
+            relevant.append({
+                'name': name,
+                'value': value,
+                'domain': '.colosseo.it',
+                'path': '/',
+                'secure': True,
+                'httpOnly': True
+            })
+            print(f"  + {name} (from network logs)")
+
+    print(f"[Cookies] Total combinadas: {len(relevant)}")
     return relevant
 
 
