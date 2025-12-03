@@ -342,20 +342,34 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] No se encontraron tarifas: {e}")
 
-        # 5. Incrementar cantidad usando JavaScript
-        print("[Flow] Incrementando cantidad...")
+        # 5. Incrementar cantidad usando JavaScript - SOLO 1 entrada para evitar problemas
+        print("[Flow] Incrementando cantidad (1 entrada)...")
         try:
-            plus_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-dir='up'], .qty-btn-plus, button.plus")
-            print(f"[Flow] Encontrados {len(plus_btns)} botones +")
-            if plus_btns:
-                plus_btn = plus_btns[0]
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", plus_btn)
-                time.sleep(0.5)
-                driver.execute_script("arguments[0].click();", plus_btn)
-                time.sleep(0.5)
-                driver.execute_script("arguments[0].click();", plus_btn)
-                print("[Flow] Cantidad incrementada")
-                time.sleep(2)
+            # Buscar el primer boton + que NO sea de un item ya agregado
+            increment_result = driver.execute_script("""
+                var plusBtns = document.querySelectorAll('button[data-dir="up"]');
+                if (plusBtns.length > 0) {
+                    // Click en el primer boton +
+                    plusBtns[0].scrollIntoView({block: 'center'});
+                    plusBtns[0].click();
+                    return 'Clicked first + button';
+                }
+                return 'No + buttons found';
+            """)
+            print(f"[Flow] Increment result: {increment_result}")
+            time.sleep(3)  # Esperar a que se actualice la UI
+
+            # Verificar que se incremento
+            qty_check = driver.execute_script("""
+                var inputs = document.querySelectorAll('input[type="number"]');
+                var total = 0;
+                for (var inp of inputs) {
+                    total += parseInt(inp.value) || 0;
+                }
+                return total;
+            """)
+            print(f"[Flow] Cantidad total seleccionada: {qty_check}")
+
         except Exception as e:
             print(f"[Flow] No se pudo incrementar: {e}")
 
@@ -391,68 +405,62 @@ def complete_booking_flow(driver):
             print(f"[Flow] Page state: {page_state}")
 
             add_to_cart_result = driver.execute_script("""
-                // PASO 1: Buscar formularios de booking y hacer submit
-                var forms = document.querySelectorAll('form');
-                for (var form of forms) {
-                    var action = (form.action || '').toLowerCase();
-                    var id = (form.id || '').toLowerCase();
-                    var classes = (form.className || '').toLowerCase();
-
-                    // Formularios de reserva/carrito
-                    if (action.includes('cart') || action.includes('book') ||
-                        id.includes('book') || id.includes('cart') ||
-                        classes.includes('book') || classes.includes('cart')) {
-
-                        // Buscar boton de submit dentro del form
-                        var submitBtn = form.querySelector('input[type="submit"], button[type="submit"], button:not([data-dir])');
-                        if (submitBtn && submitBtn.offsetParent !== null) {
-                            var text = (submitBtn.value || submitBtn.textContent || '').toLowerCase();
-                            if (!text.includes('shopping') && !text.includes('continue')) {
-                                submitBtn.click();
-                                return 'Submitted form: ' + (form.id || form.action || 'unknown');
-                            }
+                // PASO 0: PRIORIDAD MAXIMA - Buscar boton "Confirm" (visto en logs anteriores)
+                var confirmBtns = document.querySelectorAll('input[type="submit"][value="Confirm"], button');
+                for (var btn of confirmBtns) {
+                    var text = (btn.value || btn.textContent || '').toLowerCase().trim();
+                    if (text === 'confirm' || text === 'conferma') {
+                        if (btn.offsetParent !== null && !btn.hasAttribute('data-dir')) {
+                            btn.scrollIntoView({block: 'center'});
+                            btn.click();
+                            return 'Clicked CONFIRM button';
                         }
                     }
                 }
 
-                // PASO 2: Buscar input[type=submit] con texto relevante
+                // PASO 1: Buscar input[type=submit] con value "Confirm" o similar
                 var submits = document.querySelectorAll('input[type="submit"]');
                 for (var sub of submits) {
-                    var val = (sub.value || '').toLowerCase();
-                    if (val.includes('add') || val.includes('book') || val.includes('buy') ||
-                        val.includes('aggiungi') || val.includes('prenota') || val.includes('acquista')) {
+                    var val = (sub.value || '').toLowerCase().trim();
+                    // Priorizar Confirm, Add, Book
+                    if (val === 'confirm' || val === 'conferma' ||
+                        val.includes('add to cart') || val.includes('book') ||
+                        val.includes('aggiungi') || val.includes('prenota')) {
+                        if (sub.offsetParent !== null) {
+                            sub.scrollIntoView({block: 'center'});
+                            sub.click();
+                            return 'Clicked submit: ' + sub.value;
+                        }
+                    }
+                }
+
+                // PASO 2: Buscar cualquier submit visible que NO sea SEARCH
+                for (var sub of submits) {
+                    var val = (sub.value || '').toLowerCase().trim();
+                    if (val && val !== 'search' && val !== 'cerca' && sub.offsetParent !== null) {
+                        sub.scrollIntoView({block: 'center'});
                         sub.click();
-                        return 'Clicked submit: ' + sub.value;
+                        return 'Clicked other submit: ' + sub.value;
                     }
                 }
 
-                // PASO 3: Buscar boton con iconos de carrito
-                var cartIconBtns = document.querySelectorAll('button i.fa-shopping-cart, button i.fa-cart-plus, button svg[class*="cart"]');
-                for (var icon of cartIconBtns) {
-                    var btn = icon.closest('button');
-                    if (btn && btn.offsetParent !== null) {
-                        btn.click();
-                        return 'Clicked cart icon button';
-                    }
-                }
+                // PASO 3: Buscar boton con texto relevante
+                var targetTexts = ['confirm', 'conferma', 'add to cart', 'add to basket', 'book now',
+                                   'buy now', 'buy tickets', 'aggiungi al carrello', 'prenota ora',
+                                   'acquista', 'procedi', 'checkout', 'proceed'];
+                var excludeTexts = ['continue shopping', 'keep shopping', 'search', 'cerca', 'close'];
 
-                // PASO 4: Textos a buscar (orden de prioridad)
-                var targetTexts = ['add to cart', 'add to basket', 'book now', 'buy now', 'buy tickets',
-                                   'aggiungi al carrello', 'prenota ora', 'acquista', 'procedi'];
-                var excludeTexts = ['continue shopping', 'keep shopping', 'seguir comprando', 'back'];
-
-                var buttons = document.querySelectorAll('button, input[type="submit"], a.btn, a.button, .btn, [role="button"]');
+                var buttons = document.querySelectorAll('button:not([data-dir]), input[type="submit"], a.btn, a.button');
 
                 for (var btn of buttons) {
-                    if (btn.offsetParent === null) continue; // Skip hidden
+                    if (btn.offsetParent === null) continue;
                     var text = (btn.textContent || btn.value || '').toLowerCase().trim();
 
-                    // Saltar si contiene texto a excluir
                     var shouldExclude = false;
                     for (var ex of excludeTexts) {
                         if (text.includes(ex)) { shouldExclude = true; break; }
                     }
-                    if (shouldExclude || btn.hasAttribute('data-dir')) continue;
+                    if (shouldExclude) continue;
 
                     for (var target of targetTexts) {
                         if (text.includes(target)) {
@@ -463,17 +471,16 @@ def complete_booking_flow(driver):
                     }
                 }
 
-                // PASO 5: Buscar por clase especifica
+                // PASO 4: Buscar por clase especifica de ABC booking
                 var classPatterns = ['.abc-book-btn', '.abc-add-to-cart', '.add-to-cart', '.btn-book',
-                                     '.btn-add-cart', '.book-button', '[class*="add"][class*="cart"]',
-                                     '[class*="book"][class*="btn"]', '.woocommerce-Button'];
+                                     '.btn-primary', '.btn-success', '.book-button'];
                 for (var pattern of classPatterns) {
                     try {
                         var btns = document.querySelectorAll(pattern);
                         for (var btn of btns) {
                             if (btn.offsetParent !== null && !btn.hasAttribute('data-dir')) {
                                 var text = (btn.textContent || '').toLowerCase();
-                                if (!text.includes('shopping') && !text.includes('continue')) {
+                                if (!text.includes('shopping') && !text.includes('search')) {
                                     btn.click();
                                     return 'Clicked pattern ' + pattern + ': ' + text.substring(0, 30);
                                 }
@@ -482,37 +489,13 @@ def complete_booking_flow(driver):
                     } catch(e) {}
                 }
 
-                // PASO 6: Buscar botones grandes (probablemente el principal)
-                var allBtns = document.querySelectorAll('button:not([data-dir]), a.btn');
-                var biggestBtn = null;
-                var biggestSize = 0;
-                for (var btn of allBtns) {
-                    if (btn.offsetParent === null) continue;
-                    var text = (btn.textContent || '').toLowerCase();
-                    if (text.includes('shopping') || text.includes('continue') || text.includes('close')) continue;
-
-                    var size = btn.offsetWidth * btn.offsetHeight;
-                    if (size > biggestSize && size > 2000) {
-                        biggestSize = size;
-                        biggestBtn = btn;
-                    }
+                // Debug: listar todos los submits e inputs
+                var debugInfo = [];
+                var allSubmits = document.querySelectorAll('input[type="submit"]');
+                for (var s of allSubmits) {
+                    debugInfo.push('submit:' + (s.value || 'no-value') + '|visible:' + (s.offsetParent !== null));
                 }
-                if (biggestBtn) {
-                    biggestBtn.click();
-                    return 'Clicked biggest button: ' + (biggestBtn.textContent || '').substring(0, 30);
-                }
-
-                // Debug: listar todos los botones visibles
-                var visibleBtns = [];
-                var allBtns = document.querySelectorAll('button, input[type="submit"], a.btn');
-                for (var btn of allBtns) {
-                    if (btn.offsetParent !== null && btn.offsetWidth > 40) {
-                        var text = (btn.textContent || btn.value || '').trim().substring(0, 30);
-                        var cls = (btn.className || '').substring(0, 20);
-                        if (text || cls) visibleBtns.push(text + '|' + cls);
-                    }
-                }
-                return 'No cart button. Visible: ' + visibleBtns.slice(0, 8).join('; ');
+                return 'No confirm/add button. Submits: ' + debugInfo.join('; ');
             """)
             print(f"[Flow] Add to cart result: {add_to_cart_result}")
             time.sleep(5)  # Esperar a que procese
@@ -720,6 +703,70 @@ def complete_booking_flow(driver):
                 print(f"[Flow] Items en carrito: {cart_count}")
         except Exception as e:
             print(f"[Flow] Error verificando carrito: {e}")
+
+        # 5c. Segundo intento - si no navegamos al carrito, intentar de nuevo
+        if 'cart' not in current_url and 'carrello' not in current_url:
+            print("[Flow] SEGUNDO INTENTO: Buscando boton Confirm nuevamente...")
+            time.sleep(3)
+            try:
+                retry_result = driver.execute_script("""
+                    // Buscar especificamente input[type=submit][value=Confirm]
+                    var confirms = document.querySelectorAll('input[type="submit"]');
+                    for (var c of confirms) {
+                        var val = (c.value || '').trim();
+                        console.log('Found submit: ' + val + ', visible: ' + (c.offsetParent !== null));
+                        if (val.toLowerCase() === 'confirm' && c.offsetParent !== null) {
+                            c.scrollIntoView({block: 'center'});
+                            c.click();
+                            return 'RETRY: Clicked Confirm';
+                        }
+                    }
+
+                    // Intentar navegar directamente al checkout
+                    var checkoutLinks = document.querySelectorAll('a[href*="checkout"], a[href*="cart"]');
+                    for (var link of checkoutLinks) {
+                        var text = (link.textContent || '').toLowerCase();
+                        if (!text.includes('empty') && !text.includes('shopping') && link.offsetParent !== null) {
+                            link.click();
+                            return 'RETRY: Clicked checkout/cart link';
+                        }
+                    }
+
+                    return 'RETRY: No confirm button found';
+                """)
+                print(f"[Flow] Retry result: {retry_result}")
+                time.sleep(5)
+
+                # Verificar URL despues del retry
+                current_url = driver.current_url
+                print(f"[Flow] URL despues de retry: {current_url}")
+
+            except Exception as e:
+                print(f"[Flow] Error en retry: {e}")
+
+        # 5d. Ir directamente al carrito para forzar sesion
+        print("[Flow] Navegando directamente al carrito...")
+        try:
+            driver.get("https://ticketing.colosseo.it/en/cart/")
+            time.sleep(5)
+            cart_url = driver.current_url
+            print(f"[Flow] URL carrito final: {cart_url}")
+
+            # Verificar si hay items
+            cart_items = driver.execute_script("""
+                var body = document.body.innerText;
+                if (body.includes('empty') || body.includes('vuoto') || body.includes('vacío')) {
+                    return 'EMPTY';
+                }
+                if (body.includes('item') || body.includes('ticket') || body.includes('bigliett')) {
+                    return 'HAS_ITEMS';
+                }
+                return 'UNKNOWN: ' + body.substring(0, 100);
+            """)
+            print(f"[Flow] Estado carrito: {cart_items}")
+
+        except Exception as e:
+            print(f"[Flow] Error navegando al carrito: {e}")
 
         # 6. Forzar multiples peticiones AJAX para generar cookies de sesion
         print("[Flow] Forzando peticiones AJAX...")
