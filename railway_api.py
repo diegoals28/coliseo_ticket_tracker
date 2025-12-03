@@ -385,12 +385,15 @@ def query_calendar(guid, month, year):
             return None, "No hay driver disponible"
 
     try:
-        # Asegurar que estamos en el dominio correcto
+        # Navegar a la página del tour para asegurar contexto correcto
         current_url = driver.current_url
-        if 'ticketing.colosseo.it' not in current_url:
-            print("[Query] Navegando al sitio...")
+        print(f"[Query] URL actual: {current_url}")
+        if 'eventi' not in current_url:
+            print("[Query] Navegando a la página del tour...")
             driver.get(TOUR_URL)
-            time.sleep(3)
+            time.sleep(5)
+            # Esperar a que cargue
+            wait_for_octofence(driver, timeout=30)
 
         # Hacer la consulta AJAX con URL absoluta
         result = driver.execute_script("""
