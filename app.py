@@ -280,13 +280,18 @@ def consultar_disponibilidad():
         data = request.json
 
         # Validar cookies
-        cookies_json = data.get('cookies')
-        if not cookies_json:
+        cookies_data = data.get('cookies')
+        if not cookies_data:
             return jsonify({"error": "No se proporcionaron cookies"}), 400
 
-        # Parsear cookies
+        # Parsear cookies - acepta string JSON o lista directamente
         try:
-            cookies = json.loads(cookies_json)
+            if isinstance(cookies_data, str):
+                cookies = json.loads(cookies_data)
+            elif isinstance(cookies_data, list):
+                cookies = cookies_data
+            else:
+                return jsonify({"error": "Formato de cookies inválido"}), 400
         except json.JSONDecodeError:
             return jsonify({"error": "Formato de cookies inválido. Debe ser JSON válido"}), 400
 
