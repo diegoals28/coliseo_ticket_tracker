@@ -27,11 +27,13 @@ SCRAPINGBEE_API_KEY = os.environ.get('SCRAPINGBEE_API_KEY', '')
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
-# URL del tour
+# URLs
 TOUR_URL = "https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-palatino-gruppi/"
+CART_URL = "https://ticketing.colosseo.it/en/cart/"
+BASE_URL = "https://ticketing.colosseo.it"
 
 
-def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None):
+def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None, custom_cookies=None, session_id=None):
     """
     Usa ScrapingBee para cargar una página con JavaScript rendering.
 
@@ -39,9 +41,11 @@ def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None):
         url: URL a cargar
         wait_time: Tiempo de espera para JavaScript (ms)
         js_scenario: Escenario de JavaScript a ejecutar
+        custom_cookies: Cookies a enviar con la peticion
+        session_id: ID de sesion para mantener cookies entre peticiones
 
     Returns:
-        dict con 'success', 'html', 'cookies' o 'error'
+        dict con 'success', 'html', 'cookies', 'headers' o 'error'
     """
     if not SCRAPINGBEE_API_KEY:
         return {'success': False, 'error': 'SCRAPINGBEE_API_KEY no configurada'}
@@ -59,35 +63,66 @@ def fetch_with_scrapingbee(url, wait_time=10000, js_scenario=None):
         'json_response': 'true',  # Obtener cookies y metadata
     }
 
+    # Mantener sesion entre peticiones
+    if session_id:
+        params['session_id'] = session_id
+
     if js_scenario:
         params['js_scenario'] = json.dumps(js_scenario)
+
+    # Headers personalizados
+    headers = {}
+    if custom_cookies:
+        cookie_str = '; '.join([f"{c['name']}={c['value']}" for c in custom_cookies])
+        headers['Spb-Cookie'] = cookie_str
+        params['forward_headers'] = 'true'
 
     try:
         response = requests.get(
             'https://app.scrapingbee.com/api/v1/',
             params=params,
+            headers=headers if headers else None,
             timeout=300  # 5 minutos
         )
 
         print(f"[ScrapingBee] Status: {response.status_code}")
 
+        # Capturar cookies de headers de respuesta (prefijo Spb-)
+        response_cookies = {}
+        for header_name, header_value in response.headers.items():
+            if header_name.lower().startswith('spb-set-cookie'):
+                # Parsear Set-Cookie header
+                cookie_parts = header_value.split(';')[0].split('=', 1)
+                if len(cookie_parts) == 2:
+                    response_cookies[cookie_parts[0].strip()] = cookie_parts[1].strip()
+
         if response.status_code == 200:
             try:
                 data = response.json()
+
+                # Combinar cookies del body JSON con las de headers
+                body_cookies = data.get('cookies', {})
+                all_cookies = {**body_cookies, **response_cookies} if isinstance(body_cookies, dict) else body_cookies
+
+                # Debug: mostrar headers de respuesta
+                print(f"[ScrapingBee] Response headers con Spb-: {[h for h in response.headers.keys() if 'spb' in h.lower()]}")
+
                 return {
                     'success': True,
                     'html': data.get('body', ''),
-                    'cookies': data.get('cookies', {}),
+                    'cookies': all_cookies,
                     'headers': data.get('headers', {}),
-                    'status': data.get('status_code', 200)
+                    'status': data.get('status_code', 200),
+                    'response_headers': dict(response.headers)
                 }
             except:
                 # Respuesta no es JSON, es HTML directo
                 return {
                     'success': True,
                     'html': response.text,
-                    'cookies': {},
-                    'headers': dict(response.headers)
+                    'cookies': response_cookies,
+                    'headers': dict(response.headers),
+                    'response_headers': dict(response.headers)
                 }
         else:
             error_msg = response.text[:500] if response.text else f"HTTP {response.status_code}"
@@ -444,6 +479,165 @@ def save_cookies_local(cookies, filename="cookies_colosseo.json"):
         return False
 
 
+def extract_with_session_flow():
+    """
+    Usa una sesion de ScrapingBee para mantener cookies entre peticiones.
+    Esto simula mejor el comportamiento de un usuario real.
+    """
+    import random
+    import string
+
+    print("\n[Session] Iniciando flujo con sesion persistente...")
+
+    # Generar ID de sesion unico
+    session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
+    print(f"[Session] ID: {session_id}")
+
+    all_cookies = {}
+
+    # Paso 1: Visitar la pagina principal para obtener cookies iniciales
+    print("\n[Session] Paso 1: Visitando pagina principal...")
+    result1 = fetch_with_scrapingbee(
+        BASE_URL,
+        wait_time=8000,
+        session_id=session_id
+    )
+
+    if result1['success']:
+        cookies1 = result1.get('cookies', {})
+        if isinstance(cookies1, dict):
+            all_cookies.update(cookies1)
+        print(f"[Session] Cookies paso 1: {len(cookies1) if isinstance(cookies1, dict) else 'N/A'}")
+
+        # Verificar si pasamos Octofence
+        html = result1.get('html', '')
+        if 'waiting' in html.lower()[:2000] or 'block' in result1.get('html', '').lower()[:500]:
+            print("[Session] Octofence detectado, esperando...")
+            time.sleep(5)
+
+    # Paso 2: Visitar el carrito para iniciar sesion PHP
+    print("\n[Session] Paso 2: Visitando carrito...")
+    result2 = fetch_with_scrapingbee(
+        CART_URL,
+        wait_time=10000,
+        session_id=session_id
+    )
+
+    if result2['success']:
+        cookies2 = result2.get('cookies', {})
+        if isinstance(cookies2, dict):
+            all_cookies.update(cookies2)
+        print(f"[Session] Cookies paso 2: {len(cookies2) if isinstance(cookies2, dict) else 'N/A'}")
+
+        # Debug: mostrar headers
+        headers2 = result2.get('headers', {})
+        print(f"[Session] Headers del servidor: {list(headers2.keys())[:10]}")
+
+    # Paso 3: Visitar la pagina del tour con JS scenario
+    print("\n[Session] Paso 3: Visitando tour con interaccion...")
+    js_scenario = {
+        "instructions": [
+            {"wait": 3000},
+            {"evaluate": """
+                // Aceptar cookies
+                var acceptBtn = document.querySelector('[data-cli_action="accept_all"], .cli-accept-all-btn, #cookie_action_close_header');
+                if (acceptBtn) acceptBtn.click();
+            """},
+            {"wait": 2000},
+            {"evaluate": """
+                // Click en dia disponible
+                var day = document.querySelector('.ui-datepicker-calendar td:not(.ui-datepicker-unselectable) a');
+                if (day) {
+                    day.click();
+                    return 'Day clicked: ' + day.textContent;
+                }
+                return 'No day found';
+            """},
+            {"wait": 4000},
+            {"evaluate": """
+                // Click en horario
+                var slot = document.querySelector('input[name="slot"]');
+                if (slot) {
+                    slot.click();
+                    return 'Slot clicked';
+                }
+                return 'No slot found';
+            """},
+            {"wait": 3000},
+            {"evaluate": """
+                // Incrementar cantidad
+                var plus = document.querySelector('button[data-dir="up"]');
+                if (plus) {
+                    plus.click();
+                    return 'Quantity incremented';
+                }
+                return 'No plus button';
+            """},
+            {"wait": 2000},
+            {"evaluate": """
+                // Obtener cookies del documento
+                return document.cookie;
+            """},
+            {"wait": 2000}
+        ]
+    }
+
+    result3 = fetch_with_scrapingbee(
+        TOUR_URL,
+        wait_time=15000,
+        js_scenario=js_scenario,
+        session_id=session_id
+    )
+
+    if result3['success']:
+        cookies3 = result3.get('cookies', {})
+        if isinstance(cookies3, dict):
+            all_cookies.update(cookies3)
+        print(f"[Session] Cookies paso 3: {len(cookies3) if isinstance(cookies3, dict) else 'N/A'}")
+
+        # Verificar contenido
+        html = result3.get('html', '')
+        indicators = {
+            'calendar': 'datepicker' in html.lower(),
+            'tariff': 'tariff' in html.lower(),
+            'cart_ref': 'cart' in html.lower()
+        }
+        print(f"[Session] Indicadores pagina: {indicators}")
+
+    # Paso 4: Volver al carrito para capturar cookies de sesion
+    print("\n[Session] Paso 4: Volviendo al carrito...")
+    result4 = fetch_with_scrapingbee(
+        CART_URL,
+        wait_time=8000,
+        session_id=session_id
+    )
+
+    if result4['success']:
+        cookies4 = result4.get('cookies', {})
+        if isinstance(cookies4, dict):
+            all_cookies.update(cookies4)
+        print(f"[Session] Cookies paso 4: {len(cookies4) if isinstance(cookies4, dict) else 'N/A'}")
+
+    # Mostrar todas las cookies recolectadas
+    print(f"\n[Session] Total cookies recolectadas: {len(all_cookies)}")
+    for name in all_cookies.keys():
+        print(f"  - {name}")
+
+    # Verificar cookies criticas
+    critical = ['PHPSESSID', 'octofence-waap-id', 'octofence-waap-sessid']
+    has_critical = any(c in all_cookies for c in critical)
+    print(f"[Session] Tiene cookies criticas: {has_critical}")
+
+    if all_cookies:
+        cookies_list = [
+            {'name': k, 'value': v, 'domain': '.colosseo.it'}
+            for k, v in all_cookies.items()
+        ]
+        return cookies_list
+
+    return None
+
+
 def main():
     """Función principal"""
     print("=" * 60)
@@ -459,19 +653,35 @@ def main():
 
     cookies = None
 
-    # Método 1: Flujo completo con carrito (premium proxy)
+    # Método 0: Flujo con sesion persistente (NUEVO)
     print("\n" + "=" * 40)
-    print("Método 1: Flujo con carrito (Premium)")
+    print("Método 0: Sesion Persistente")
     print("=" * 40)
-    cookies = extract_cookies_from_page()
+    cookies = extract_with_session_flow()
 
-    # Verificar si tenemos las cookies críticas
+    # Verificar cookies criticas
     if cookies:
         cookie_names = [c.get('name', '') for c in cookies]
-        has_critical = any('octofence-waap' in str(cookie_names) or 'PHPSESSID' in str(cookie_names) for _ in [1])
-        if not has_critical and len(cookies) < 10:
-            print(f"[Warning] Solo {len(cookies)} cookies, faltan cookies críticas")
+        critical = ['PHPSESSID', 'octofence-waap-id', 'octofence-waap-sessid']
+        has_critical = any(c in cookie_names for c in critical)
+        if not has_critical:
+            print(f"[Warning] Faltan cookies criticas, intentando otro metodo...")
             cookies = None
+
+    # Método 1: Flujo completo con carrito (premium proxy)
+    if not cookies:
+        print("\n" + "=" * 40)
+        print("Método 1: Flujo con carrito (Premium)")
+        print("=" * 40)
+        cookies = extract_cookies_from_page()
+
+        # Verificar si tenemos las cookies críticas
+        if cookies:
+            cookie_names = [c.get('name', '') for c in cookies]
+            has_critical = any('octofence-waap' in str(cookie_names) or 'PHPSESSID' in str(cookie_names) for _ in [1])
+            if not has_critical and len(cookies) < 10:
+                print(f"[Warning] Solo {len(cookies)} cookies, faltan cookies críticas")
+                cookies = None
 
     # Método 2: Stealth proxy con carrito
     if not cookies:
