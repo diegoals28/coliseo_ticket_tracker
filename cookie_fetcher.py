@@ -200,9 +200,24 @@ def complete_booking_flow(driver):
             time.sleep(0.5)
             driver.execute_script("arguments[0].click();", submit)
             print("[Flow] Agregado al carrito")
-            time.sleep(5)
+            time.sleep(8)  # Esperar mas tiempo para la navegacion
         except Exception as e:
             print(f"[Flow] No se pudo agregar al carrito: {e}")
+
+        # 5. Verificar si navegamos al carrito y obtener mas cookies
+        print("[Flow] Verificando navegacion al carrito...")
+        try:
+            current_url = driver.current_url
+            print(f"[Flow] URL actual: {current_url}")
+
+            # Si no estamos en el carrito, navegar directamente
+            if 'cart' not in current_url and 'carrello' not in current_url:
+                print("[Flow] Navegando al carrito directamente...")
+                driver.get("https://ticketing.colosseo.it/en/cart/")
+                time.sleep(5)
+                print(f"[Flow] Nueva URL: {driver.current_url}")
+        except Exception as e:
+            print(f"[Flow] Error verificando carrito: {e}")
 
         return True
 
@@ -214,12 +229,29 @@ def complete_booking_flow(driver):
 def get_cookies(driver):
     """Obtiene todas las cookies del navegador"""
     cookies = driver.get_cookies()
-    print(f"[Cookies] Obtenidas {len(cookies)} cookies")
+    print(f"[Cookies] Obtenidas {len(cookies)} cookies totales")
 
-    # Filtrar cookies relevantes
-    relevant = []
+    # Debug: mostrar TODAS las cookies
+    print("[Debug] Todas las cookies:")
     for c in cookies:
-        if 'colosseo' in c.get('domain', '') or 'octofence' in c.get('name', '').lower():
+        print(f"  - {c['name']} (domain: {c.get('domain', 'N/A')})")
+
+    # Filtrar cookies relevantes (incluir PHPSESSID y otras importantes)
+    relevant = []
+    important_names = ['PHPSESSID', 'octofence', 'waap']
+
+    for c in cookies:
+        domain = c.get('domain', '')
+        name = c.get('name', '')
+
+        # Incluir si: dominio colosseo, o nombre contiene octofence/waap, o es PHPSESSID
+        is_relevant = (
+            'colosseo' in domain or
+            'ticketing' in domain or
+            any(imp in name.lower() for imp in important_names)
+        )
+
+        if is_relevant:
             relevant.append({
                 'name': c['name'],
                 'value': c['value'],
