@@ -695,6 +695,7 @@ def get_cookies_from_network_logs(driver):
 
     print("[Network] Analizando logs de red para cookies HttpOnly...")
     cookies_found = {}
+    set_cookie_count = 0
 
     try:
         logs = driver.get_log('performance')
@@ -703,34 +704,54 @@ def get_cookies_from_network_logs(driver):
         for entry in logs:
             try:
                 log = json_module.loads(entry['message'])['message']
+                method = log.get('method', '')
 
                 # Buscar respuestas con Set-Cookie
-                if log['method'] == 'Network.responseReceivedExtraInfo':
+                if method == 'Network.responseReceivedExtraInfo':
                     headers = log.get('params', {}).get('headers', {})
                     for key, value in headers.items():
                         if key.lower() == 'set-cookie':
+                            set_cookie_count += 1
                             # Parsear la cookie
                             cookie_parts = value.split(';')[0].split('=', 1)
                             if len(cookie_parts) == 2:
                                 name, val = cookie_parts
                                 cookies_found[name.strip()] = val.strip()
+                                # Debug: mostrar cookies importantes
+                                if 'php' in name.lower() or 'octofence' in name.lower() or 'waap' in name.lower():
+                                    print(f"[Network] IMPORTANTE encontrada: {name}")
 
-                # Buscar cookies en requests
-                if log['method'] == 'Network.requestWillBeSentExtraInfo':
+                # Buscar cookies en requests salientes
+                if method == 'Network.requestWillBeSentExtraInfo':
                     headers = log.get('params', {}).get('headers', {})
                     cookie_header = headers.get('Cookie', headers.get('cookie', ''))
                     if cookie_header:
                         for cookie_pair in cookie_header.split(';'):
                             if '=' in cookie_pair:
                                 name, val = cookie_pair.split('=', 1)
+                                name = name.strip()
+                                if name not in cookies_found:
+                                    cookies_found[name] = val.strip()
+
+                # Buscar tambien en Network.responseReceived para headers
+                if method == 'Network.responseReceived':
+                    response = log.get('params', {}).get('response', {})
+                    headers = response.get('headers', {})
+                    for key, value in headers.items():
+                        if key.lower() == 'set-cookie':
+                            cookie_parts = value.split(';')[0].split('=', 1)
+                            if len(cookie_parts) == 2:
+                                name, val = cookie_parts
                                 cookies_found[name.strip()] = val.strip()
 
             except Exception as e:
                 continue
 
-        print(f"[Network] Cookies encontradas en logs: {len(cookies_found)}")
-        for name in cookies_found.keys():
-            print(f"  - {name}")
+        print(f"[Network] Set-Cookie headers encontrados: {set_cookie_count}")
+        print(f"[Network] Cookies unicas extraidas: {len(cookies_found)}")
+        for name in sorted(cookies_found.keys()):
+            is_critical = 'php' in name.lower() or 'waap' in name.lower()
+            print(f"  {'*' if is_critical else '-'} {name}")
 
     except Exception as e:
         print(f"[Network] Error procesando logs: {e}")
