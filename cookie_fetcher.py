@@ -235,51 +235,105 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] Error analizando forms: {e}")
 
-        # 7. Agregar al carrito - buscar boton correcto
-        print("[Flow] Buscando boton agregar al carrito...")
+        # 7. Explorar estructura de la pagina para encontrar como agregar al carrito
+        print("[Flow] Explorando estructura de la pagina...")
+        try:
+            page_structure = driver.execute_script("""
+                var result = {};
+
+                // Buscar secciones de tarifa
+                var tariffSections = document.querySelectorAll('.tariff, .tariff-row, .ticket-type, [class*="tariff"], [class*="ticket"]');
+                result.tariffSections = tariffSections.length;
+
+                // Buscar inputs de cantidad
+                var qtyInputs = document.querySelectorAll('input[type="number"], input[name*="qty"], input[name*="quantity"]');
+                result.qtyInputs = qtyInputs.length;
+
+                // Buscar todos los elementos con data attributes relacionados
+                var dataElements = document.querySelectorAll('[data-product], [data-item], [data-ticket], [data-tariff]');
+                result.dataElements = dataElements.length;
+
+                // Buscar la seccion activa despues de seleccionar slot
+                var activeSection = document.querySelector('.slot-selected, .time-selected, .active-slot, [class*="selected"]');
+                result.hasActiveSection = !!activeSection;
+
+                // Buscar botones dentro de secciones de tarifa
+                if (tariffSections.length > 0) {
+                    var btnsInTariff = tariffSections[0].querySelectorAll('button');
+                    result.btnsInFirstTariff = btnsInTariff.length;
+                }
+
+                // Buscar el HTML de la seccion principal
+                var mainContent = document.querySelector('.event-content, .booking-section, main, #content');
+                if (mainContent) {
+                    result.mainContentPreview = mainContent.innerHTML.substring(0, 500);
+                }
+
+                return JSON.stringify(result, null, 2);
+            """)
+            print(f"[Flow] Page structure: {page_structure[:400] if page_structure else 'None'}")
+        except Exception as e:
+            print(f"[Flow] Error explorando pagina: {e}")
+
+        # 7b. Intentar agregar al carrito de varias formas
+        print("[Flow] Intentando agregar al carrito...")
         try:
             add_cart_result = driver.execute_script("""
-                // Buscar todos los botones visibles
-                var allButtons = document.querySelectorAll('button, a.btn, input[type="button"]');
-                var candidates = [];
-
-                for (var btn of allButtons) {
-                    var text = (btn.textContent || btn.value || '').toLowerCase().trim();
-                    var classes = btn.className || '';
-                    var isVisible = btn.offsetParent !== null;
-
-                    if (!isVisible) continue;
-
-                    // Excluir botones de busqueda y navegacion
-                    if (text.includes('search') || btn.getAttribute('alt') === 'Search') continue;
-                    if (text.includes('next') || text.includes('prev')) continue;
-
-                    candidates.push({
-                        text: text.substring(0, 50),
-                        classes: classes.substring(0, 50),
-                        tag: btn.tagName
-                    });
-
-                    // Buscar boton de agregar
-                    if (text.includes('add') || text.includes('cart') || text.includes('carrello') ||
-                        text.includes('acquista') || text.includes('aggiungi') || text.includes('compra') ||
-                        classes.includes('add-to-cart') || classes.includes('btn-cart')) {
-                        btn.click();
-                        return 'Clicked: ' + text.substring(0, 30);
+                // Metodo 1: Buscar boton con icono de carrito o plus
+                var iconButtons = document.querySelectorAll('button i, a i');
+                for (var icon of iconButtons) {
+                    var classes = icon.className || '';
+                    if (classes.includes('cart') || classes.includes('plus') || classes.includes('add') || classes.includes('shopping')) {
+                        var btn = icon.closest('button') || icon.closest('a');
+                        if (btn && btn.offsetParent !== null) {
+                            btn.click();
+                            return 'Method1: Clicked icon button with class: ' + classes;
+                        }
                     }
                 }
 
-                // Si no encontro, buscar por icono de carrito
-                var cartIcons = document.querySelectorAll('button i.fa-shopping-cart, button i.fa-cart-plus, a i.fa-shopping-cart');
-                for (var icon of cartIcons) {
-                    var btn = icon.closest('button') || icon.closest('a');
-                    if (btn) {
-                        btn.click();
-                        return 'Clicked cart icon button';
+                // Metodo 2: Buscar en la seccion de slots seleccionados
+                var selectedSlot = document.querySelector('input[name="slot"]:checked');
+                if (selectedSlot) {
+                    var container = selectedSlot.closest('.slot-container, .time-slot, tr, .row, div');
+                    if (container) {
+                        var btn = container.querySelector('button:not([type="button"][data-dir])');
+                        if (btn) {
+                            btn.click();
+                            return 'Method2: Clicked button near selected slot';
+                        }
                     }
                 }
 
-                return 'Candidates: ' + JSON.stringify(candidates.slice(0, 5));
+                // Metodo 3: Buscar boton despues de los controles de cantidad
+                var qtyControls = document.querySelector('button[data-dir="up"]');
+                if (qtyControls) {
+                    var parent = qtyControls.closest('.qty-wrapper, .quantity-controls, .tariff-row, div');
+                    if (parent) {
+                        // Buscar siguiente boton que no sea de cantidad
+                        var allBtns = parent.querySelectorAll('button');
+                        for (var btn of allBtns) {
+                            if (!btn.hasAttribute('data-dir')) {
+                                btn.click();
+                                return 'Method3: Clicked non-qty button in same container';
+                            }
+                        }
+                    }
+                }
+
+                // Metodo 4: Buscar submit button que no sea de busqueda
+                var submits = document.querySelectorAll('button[type="submit"]');
+                for (var btn of submits) {
+                    if (btn.getAttribute('alt') !== 'Search' && btn.offsetParent !== null) {
+                        var text = btn.textContent || '';
+                        if (!text.toLowerCase().includes('search')) {
+                            btn.click();
+                            return 'Method4: Clicked submit: ' + text.substring(0, 20);
+                        }
+                    }
+                }
+
+                return 'No method worked';
             """)
             print(f"[Flow] Add to cart result: {add_cart_result}")
             time.sleep(10)
