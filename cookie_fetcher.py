@@ -165,42 +165,95 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] No se pudo seleccionar dia: {e}")
 
-        # 2. Click en horario usando JavaScript
+        # 2. Esperar a que carguen los horarios
+        print("[Flow] Esperando horarios...")
+        time.sleep(4)
+
+        # 3. Click en horario usando JavaScript
         print("[Flow] Buscando horario...")
         try:
-            slot = wait.until(EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "input[name='slot']")))
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", slot)
-            time.sleep(0.5)
-            driver.execute_script("arguments[0].click();", slot)
-            print("[Flow] Horario seleccionado")
-            time.sleep(2)
+            # Buscar el primer slot disponible
+            slots = driver.find_elements(By.CSS_SELECTOR, "input[name='slot']")
+            print(f"[Flow] Encontrados {len(slots)} slots")
+            if slots:
+                slot = slots[0]
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", slot)
+                time.sleep(0.5)
+                driver.execute_script("arguments[0].click();", slot)
+                print("[Flow] Horario seleccionado")
+                time.sleep(3)
         except Exception as e:
             print(f"[Flow] No se pudo seleccionar horario: {e}")
 
-        # 3. Incrementar cantidad usando JavaScript
+        # 4. Seleccionar tarifa si existe
+        print("[Flow] Buscando tarifas...")
+        try:
+            tariffs = driver.find_elements(By.CSS_SELECTOR, "input[name='tariff'], .tariff-option input[type='radio']")
+            print(f"[Flow] Encontradas {len(tariffs)} tarifas")
+            if tariffs:
+                tariff = tariffs[0]
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", tariff)
+                time.sleep(0.5)
+                driver.execute_script("arguments[0].click();", tariff)
+                print("[Flow] Tarifa seleccionada")
+                time.sleep(2)
+        except Exception as e:
+            print(f"[Flow] No se encontraron tarifas: {e}")
+
+        # 5. Incrementar cantidad usando JavaScript
         print("[Flow] Incrementando cantidad...")
         try:
-            plus_btn = driver.find_element(By.CSS_SELECTOR, "button[data-dir='up']")
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", plus_btn)
-            time.sleep(0.5)
-            driver.execute_script("arguments[0].click();", plus_btn)
-            time.sleep(0.5)
-            driver.execute_script("arguments[0].click();", plus_btn)
-            print("[Flow] Cantidad incrementada")
-            time.sleep(2)
+            plus_btns = driver.find_elements(By.CSS_SELECTOR, "button[data-dir='up'], .qty-btn-plus, button.plus")
+            print(f"[Flow] Encontrados {len(plus_btns)} botones +")
+            if plus_btns:
+                plus_btn = plus_btns[0]
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", plus_btn)
+                time.sleep(0.5)
+                driver.execute_script("arguments[0].click();", plus_btn)
+                time.sleep(0.5)
+                driver.execute_script("arguments[0].click();", plus_btn)
+                print("[Flow] Cantidad incrementada")
+                time.sleep(2)
         except Exception as e:
             print(f"[Flow] No se pudo incrementar: {e}")
 
-        # 4. Agregar al carrito usando JavaScript
+        # 6. Debug: ver estado del formulario antes de submit
+        print("[Flow] Verificando estado del formulario...")
+        try:
+            form_data = driver.execute_script("""
+                var form = document.querySelector('form');
+                if (!form) return 'No form found';
+                var data = new FormData(form);
+                var result = [];
+                for (var pair of data.entries()) {
+                    result.push(pair[0] + '=' + pair[1]);
+                }
+                return result.join(', ');
+            """)
+            print(f"[Flow] Form data: {form_data[:200] if form_data else 'None'}")
+        except Exception as e:
+            print(f"[Flow] Error verificando form: {e}")
+
+        # 7. Agregar al carrito usando JavaScript
         print("[Flow] Agregando al carrito...")
         try:
-            submit = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit)
-            time.sleep(0.5)
-            driver.execute_script("arguments[0].click();", submit)
-            print("[Flow] Agregado al carrito")
-            time.sleep(8)  # Esperar mas tiempo para la navegacion
+            # Buscar boton submit
+            submit_btns = driver.find_elements(By.CSS_SELECTOR, "button[type='submit'], input[type='submit'], .add-to-cart, .btn-primary")
+            print(f"[Flow] Encontrados {len(submit_btns)} botones submit")
+
+            if submit_btns:
+                submit = submit_btns[0]
+                print(f"[Flow] Boton: {submit.get_attribute('outerHTML')[:100]}")
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit)
+                time.sleep(0.5)
+
+                # Intentar submit del form directamente
+                driver.execute_script("""
+                    var form = document.querySelector('form');
+                    if (form) form.submit();
+                """)
+                print("[Flow] Form submitted via JS")
+                time.sleep(8)
         except Exception as e:
             print(f"[Flow] No se pudo agregar al carrito: {e}")
 
