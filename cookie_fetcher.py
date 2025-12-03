@@ -1185,41 +1185,31 @@ def test_api_with_cookies(driver, cookies):
 
 def fetch_availability_from_browser(driver):
     """
-    Consulta la disponibilidad de todos los tours desde el navegador.
-    Esto evita el problema de fingerprinting de Octofence.
+    Captura la disponibilidad desde los logs de red del navegador.
+    Navega a las páginas de los tours y captura las respuestas de calendars_month.
     """
-    print("\n[Availability] Consultando disponibilidad desde el navegador...")
+    import json as json_module
 
-    # Primero navegar a la página del tour para tener el contexto correcto
-    print("[Availability] Navegando a pagina del tour...")
-    driver.get("https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-palatino-gruppi/")
-    time.sleep(3)
+    print("\n[Availability] Capturando disponibilidad desde navegador...")
 
     TOURS = {
         "24h-grupos": {
             "nombre": "24h Colosseo, Foro Romano y Palatino - GRUPOS",
-            "guid": "a9a4b0f8-bf3c-4f22-afcd-196a27be04b9"
+            "guid": "a9a4b0f8-bf3c-4f22-afcd-196a27be04b9",
+            "url": "https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-palatino-gruppi/"
         },
         "arena": {
             "nombre": "Colosseo con ACCESO A LA ARENA",
-            "guid": "8d1c991c-a15f-42bc-8cb5-bd738aa19c70"
+            "guid": "8d1c991c-a15f-42bc-8cb5-bd738aa19c70",
+            "url": "https://ticketing.colosseo.it/en/eventi/colosseo-arena/"
         }
     }
-
-    # Calcular meses a consultar (6 meses)
-    from datetime import datetime, timedelta
-    hoy = datetime.now()
-    meses = []
-    for i in range(6):
-        fecha = hoy + timedelta(days=30*i)
-        mes_str = f"{fecha.year}-{fecha.month:02d}"
-        if mes_str not in meses:
-            meses.append(mes_str)
 
     all_results = {}
 
     for tour_key, tour_info in TOURS.items():
-        print(f"\n[Availability] Consultando tour: {tour_info['nombre'][:40]}...")
+        print(f"\n[Availability] Tour: {tour_info['nombre'][:50]}...")
+
         tour_data = {
             "nombre": tour_info['nombre'],
             "guid": tour_info['guid'],
@@ -1228,60 +1218,87 @@ def fetch_availability_from_browser(driver):
             "total_plazas": 0
         }
 
-        for mes in meses:
-            year, month = mes.split('-')
-            print(f"  - Mes {mes}...", end=" ")
+        try:
+            # Navegar a la página del tour - esto dispara automáticamente calendars_month
+            print(f"  Navegando a {tour_info['url'][:50]}...")
+            driver.get(tour_info['url'])
+            time.sleep(5)  # Esperar a que cargue el calendario
 
-            try:
-                # Usar XMLHttpRequest en lugar de fetch para mejor compatibilidad
-                result = driver.execute_script(f"""
-                    return new Promise((resolve) => {{
-                        var xhr = new XMLHttpRequest();
-                        xhr.open('POST', 'https://ticketing.colosseo.it/mtajax/calendars_month', true);
-                        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-                        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-                        xhr.withCredentials = true;
+            # Capturar respuestas de calendars_month desde los logs de red
+            print("  Buscando respuestas de calendars_month en network logs...")
+            logs = driver.get_log('performance')
 
-                        xhr.onload = function() {{
-                            try {{
-                                var data = JSON.parse(xhr.responseText);
-                                if (data && data.timeslots) {{
-                                    resolve({{success: true, timeslots: data.timeslots}});
-                                }} else if (data && data.message) {{
-                                    resolve({{success: false, error: data.message, status: xhr.status}});
-                                }} else {{
-                                    resolve({{success: false, error: 'Unknown response', keys: Object.keys(data || {{}}), status: xhr.status}});
-                                }}
-                            }} catch(e) {{
-                                resolve({{success: false, error: 'Parse error: ' + xhr.responseText.substring(0, 100), status: xhr.status}});
-                            }}
-                        }};
+            for entry in logs:
+                try:
+                    log = json_module.loads(entry['message'])['message']
+                    method = log.get('method', '')
 
-                        xhr.onerror = function() {{
-                            resolve({{success: false, error: 'Network error', status: xhr.status}});
-                        }};
+                    # Buscar respuestas de Network.responseReceived
+                    if method == 'Network.responseReceived':
+                        response = log.get('params', {}).get('response', {})
+                        url = response.get('url', '')
 
-                        var params = 'action=midaabc_calendars_month' +
-                                    '&guids[entranceEvent_guid][]={tour_info["guid"]}' +
-                                    '&year={int(year)}' +
-                                    '&month={int(month)}' +
-                                    '&day=';
+                        if 'calendars_month' in url:
+                            request_id = log.get('params', {}).get('requestId')
+                            print(f"  Encontrada respuesta calendars_month (requestId: {request_id})")
 
-                        xhr.send(params);
-                    }});
-                """)
+                            # Obtener el body de la respuesta
+                            try:
+                                body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
+                                body_text = body.get('body', '')
 
-                if result and result.get('success'):
-                    timeslots = result.get('timeslots', [])
-                    print(f"{len(timeslots)} timeslots")
-                    tour_data['timeslots'].extend(timeslots)
-                else:
-                    print(f"Error: {result.get('error', 'unknown')[:30]}")
+                                data = json_module.loads(body_text)
+                                if data and 'timeslots' in data:
+                                    timeslots = data.get('timeslots', [])
+                                    print(f"  Capturados {len(timeslots)} timeslots!")
+                                    tour_data['timeslots'].extend(timeslots)
+                            except Exception as e:
+                                print(f"  Error obteniendo body: {str(e)[:50]}")
 
-                time.sleep(1)  # Pausa entre consultas
+                except Exception as e:
+                    continue
 
-            except Exception as e:
-                print(f"Error: {str(e)[:30]}")
+            # Si no encontramos en logs, intentar click en meses siguientes del calendario
+            if not tour_data['timeslots']:
+                print("  No se encontraron timeslots en logs, intentando navegar calendario...")
+
+                # Click en los botones de mes siguiente para cargar más datos
+                for i in range(5):  # 5 meses adicionales
+                    try:
+                        next_btn = driver.execute_script("""
+                            var btn = document.querySelector('.ui-datepicker-next, [data-handler="next"]');
+                            if (btn && btn.offsetParent !== null) {
+                                btn.click();
+                                return true;
+                            }
+                            return false;
+                        """)
+                        if next_btn:
+                            time.sleep(2)
+                            # Re-capturar logs después de cada click
+                            new_logs = driver.get_log('performance')
+                            for entry in new_logs:
+                                try:
+                                    log = json_module.loads(entry['message'])['message']
+                                    if log.get('method') == 'Network.responseReceived':
+                                        response = log.get('params', {}).get('response', {})
+                                        if 'calendars_month' in response.get('url', ''):
+                                            request_id = log.get('params', {}).get('requestId')
+                                            try:
+                                                body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
+                                                data = json_module.loads(body.get('body', ''))
+                                                if data and 'timeslots' in data:
+                                                    tour_data['timeslots'].extend(data['timeslots'])
+                                                    print(f"  +{len(data['timeslots'])} timeslots del mes {i+1}")
+                                            except:
+                                                pass
+                                except:
+                                    continue
+                    except Exception as e:
+                        print(f"  Error navegando mes {i+1}: {str(e)[:30]}")
+
+        except Exception as e:
+            print(f"  Error: {str(e)[:50]}")
 
         # Procesar timeslots para calcular totales
         fechas_con_disponibilidad = set()
