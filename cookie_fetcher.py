@@ -359,20 +359,33 @@ def complete_booking_flow(driver):
         except Exception as e:
             print(f"[Flow] No se pudo incrementar: {e}")
 
-        # 5b. CRITICO: Hacer click en boton "Add to Cart" / "Book" / "Continue"
+        # 5b. CRITICO: Hacer click en boton "Add to Cart" / "Book"
         print("[Flow] Buscando boton ADD TO CART...")
         try:
             add_to_cart_result = driver.execute_script("""
-                // Buscar boton por texto
+                // Textos a buscar (orden de prioridad)
+                var targetTexts = ['add to cart', 'add to basket', 'book now', 'checkout',
+                                   'aggiungi al carrello', 'prenota ora', 'proceed to checkout'];
+                // Textos a EVITAR
+                var excludeTexts = ['continue shopping', 'keep shopping', 'seguir comprando'];
+
                 var buttons = document.querySelectorAll('button, input[type="submit"], a.btn, a.button');
-                var targetTexts = ['add to cart', 'add to basket', 'book now', 'book', 'continue',
-                                   'aggiungi', 'prenota', 'continua', 'proceed', 'next'];
 
                 for (var btn of buttons) {
                     var text = (btn.textContent || btn.value || '').toLowerCase().trim();
+
+                    // Saltar si contiene texto a excluir
+                    var shouldExclude = false;
+                    for (var ex of excludeTexts) {
+                        if (text.includes(ex)) {
+                            shouldExclude = true;
+                            break;
+                        }
+                    }
+                    if (shouldExclude) continue;
+
                     for (var target of targetTexts) {
                         if (text.includes(target)) {
-                            console.log('Found button:', text);
                             btn.scrollIntoView({block: 'center'});
                             btn.click();
                             return 'Clicked: ' + text;
@@ -380,38 +393,50 @@ def complete_booking_flow(driver):
                     }
                 }
 
-                // Buscar por clase
-                var classButtons = document.querySelectorAll('.add-to-cart, .book-now, .btn-book, .abc-book-btn, .booking-submit, [class*="cart"], [class*="book"]');
-                for (var btn of classButtons) {
-                    if (btn.offsetParent !== null) {
-                        btn.click();
-                        return 'Clicked by class: ' + btn.className;
-                    }
-                }
-
-                // Buscar formulario de booking y submit
-                var bookingForm = document.querySelector('form[action*="cart"], form[action*="book"], form.booking-form, form#booking-form');
-                if (bookingForm) {
-                    var submitBtn = bookingForm.querySelector('button[type="submit"], input[type="submit"]');
-                    if (submitBtn) {
-                        submitBtn.click();
-                        return 'Submitted booking form';
-                    }
-                }
-
-                // Ultimo recurso: buscar cualquier boton visible que no sea +/-
-                var allBtns = document.querySelectorAll('button[type="submit"]:not([data-dir])');
-                for (var btn of allBtns) {
-                    if (btn.offsetParent !== null && btn.offsetWidth > 50) {
-                        var text = btn.textContent.trim();
-                        if (text && text.length > 2 && text.length < 30) {
+                // Buscar por clase especifica de ABC (el sistema de booking del sitio)
+                var abcButtons = document.querySelectorAll('.abc-book-btn, .abc-add-to-cart, [class*="abc-"][class*="btn"]');
+                for (var btn of abcButtons) {
+                    if (btn.offsetParent !== null && !btn.hasAttribute('data-dir')) {
+                        var text = btn.textContent.toLowerCase();
+                        if (!text.includes('shopping')) {
                             btn.click();
-                            return 'Clicked submit button: ' + text;
+                            return 'Clicked ABC button: ' + btn.className;
                         }
                     }
                 }
 
-                return 'No add-to-cart button found';
+                // Buscar el modal del carrito y su boton de checkout
+                var cartModal = document.querySelector('.cart-modal, #cart-modal, [class*="cart"][class*="modal"]');
+                if (cartModal) {
+                    var checkoutBtn = cartModal.querySelector('a[href*="checkout"], a[href*="cart"], button');
+                    if (checkoutBtn && checkoutBtn.offsetParent !== null) {
+                        checkoutBtn.click();
+                        return 'Clicked cart modal button';
+                    }
+                }
+
+                // Buscar link directo al carrito
+                var cartLinks = document.querySelectorAll('a[href*="/cart"], a[href*="/checkout"]');
+                for (var link of cartLinks) {
+                    var text = link.textContent.toLowerCase();
+                    if (text.includes('checkout') || text.includes('view cart') || text.includes('cart')) {
+                        if (!text.includes('shopping')) {
+                            link.click();
+                            return 'Clicked cart link: ' + text;
+                        }
+                    }
+                }
+
+                // Listar todos los botones visibles para debug
+                var visibleBtns = [];
+                var allBtns = document.querySelectorAll('button:not([data-dir])');
+                for (var btn of allBtns) {
+                    if (btn.offsetParent !== null && btn.offsetWidth > 40) {
+                        var text = (btn.textContent || '').trim().substring(0, 30);
+                        if (text) visibleBtns.push(text);
+                    }
+                }
+                return 'No cart button. Visible buttons: ' + visibleBtns.slice(0, 5).join(', ');
             """)
             print(f"[Flow] Add to cart result: {add_to_cart_result}")
             time.sleep(5)  # Esperar a que procese
