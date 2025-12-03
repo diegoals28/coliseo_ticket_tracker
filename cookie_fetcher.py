@@ -1183,6 +1183,152 @@ def test_api_with_cookies(driver, cookies):
         return False
 
 
+def fetch_availability_from_browser(driver):
+    """
+    Consulta la disponibilidad de todos los tours desde el navegador.
+    Esto evita el problema de fingerprinting de Octofence.
+    """
+    print("\n[Availability] Consultando disponibilidad desde el navegador...")
+
+    TOURS = {
+        "24h-grupos": {
+            "nombre": "24h Colosseo, Foro Romano y Palatino - GRUPOS",
+            "guid": "a9a4b0f8-bf3c-4f22-afcd-196a27be04b9"
+        },
+        "arena": {
+            "nombre": "Colosseo con ACCESO A LA ARENA",
+            "guid": "8d1c991c-a15f-42bc-8cb5-bd738aa19c70"
+        }
+    }
+
+    # Calcular meses a consultar (6 meses)
+    from datetime import datetime, timedelta
+    hoy = datetime.now()
+    meses = []
+    for i in range(6):
+        fecha = hoy + timedelta(days=30*i)
+        mes_str = f"{fecha.year}-{fecha.month:02d}"
+        if mes_str not in meses:
+            meses.append(mes_str)
+
+    all_results = {}
+
+    for tour_key, tour_info in TOURS.items():
+        print(f"\n[Availability] Consultando tour: {tour_info['nombre'][:40]}...")
+        tour_data = {
+            "nombre": tour_info['nombre'],
+            "guid": tour_info['guid'],
+            "timeslots": [],
+            "fechas_disponibles": 0,
+            "total_plazas": 0
+        }
+
+        for mes in meses:
+            year, month = mes.split('-')
+            print(f"  - Mes {mes}...", end=" ")
+
+            try:
+                result = driver.execute_script(f"""
+                    return new Promise((resolve) => {{
+                        var formData = new FormData();
+                        formData.append('action', 'mtajax_calendars_month');
+                        formData.append('guids[entranceEvent_guid][]', '{tour_info["guid"]}');
+                        formData.append('singleDaySession', 'false');
+                        formData.append('month', {int(month)});
+                        formData.append('year', {int(year)});
+
+                        fetch('/mtajax/calendars_month', {{
+                            method: 'POST',
+                            body: formData,
+                            credentials: 'include'
+                        }})
+                        .then(r => r.json())
+                        .then(data => {{
+                            if (data && data.timeslots) {{
+                                resolve({{success: true, timeslots: data.timeslots}});
+                            }} else if (data && data.message) {{
+                                resolve({{success: false, error: data.message}});
+                            }} else {{
+                                resolve({{success: false, error: 'Unknown', keys: Object.keys(data || {{}})}});
+                            }}
+                        }})
+                        .catch(e => resolve({{success: false, error: e.message}}));
+                    }});
+                """)
+
+                if result and result.get('success'):
+                    timeslots = result.get('timeslots', [])
+                    print(f"{len(timeslots)} timeslots")
+                    tour_data['timeslots'].extend(timeslots)
+                else:
+                    print(f"Error: {result.get('error', 'unknown')[:30]}")
+
+                time.sleep(1)  # Pausa entre consultas
+
+            except Exception as e:
+                print(f"Error: {str(e)[:30]}")
+
+        # Procesar timeslots para calcular totales
+        fechas_con_disponibilidad = set()
+        total_plazas = 0
+        for ts in tour_data['timeslots']:
+            capacity = ts.get('capacity', 0)
+            if capacity > 0:
+                fecha = ts.get('startDateTime', '')[:10]
+                fechas_con_disponibilidad.add(fecha)
+                total_plazas += capacity
+
+        tour_data['fechas_disponibles'] = len(fechas_con_disponibilidad)
+        tour_data['total_plazas'] = total_plazas
+
+        all_results[tour_key] = tour_data
+        print(f"  Total: {tour_data['fechas_disponibles']} fechas, {tour_data['total_plazas']} plazas")
+
+    return all_results
+
+
+def save_availability_to_supabase(availability_data):
+    """Guarda los datos de disponibilidad en Supabase Storage"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print("[Supabase] No configurado para disponibilidad")
+        return False
+
+    try:
+        from supabase import create_client
+
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+        data = {
+            "availability": availability_data,
+            "timestamp": datetime.now().isoformat(),
+            "source": "railway-browser"
+        }
+
+        availability_json = json.dumps(data, indent=2).encode('utf-8')
+
+        bucket = 'colosseo-files'
+        path = 'availability/availability_cache.json'
+
+        # Eliminar archivo anterior
+        try:
+            supabase.storage.from_(bucket).remove([path])
+        except:
+            pass
+
+        # Subir
+        supabase.storage.from_(bucket).upload(
+            path, availability_json,
+            file_options={"content-type": "application/json", "upsert": "true"}
+        )
+
+        print("[Supabase] Disponibilidad guardada exitosamente")
+        return True
+
+    except Exception as e:
+        print(f"[Supabase] Error guardando disponibilidad: {e}")
+        return False
+
+
 def main():
     print("=" * 60)
     print("COOKIE FETCHER - Railway + undetected-chromedriver")
@@ -1234,10 +1380,16 @@ def main():
             api_works = test_api_with_cookies(driver, cookies)
             if api_works:
                 print("[API Test] Las cookies funcionan correctamente!")
+
+                # Consultar disponibilidad completa desde el navegador
+                # Esto evita el problema de fingerprinting de Octofence
+                availability = fetch_availability_from_browser(driver)
+                if availability:
+                    save_availability_to_supabase(availability)
             else:
                 print("[API Test] Las cookies no funcionan para la API")
 
-            # Guardar en Supabase
+            # Guardar cookies en Supabase
             save_to_supabase(cookies)
 
             # Guardar local como backup

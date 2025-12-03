@@ -189,6 +189,41 @@ def get_auto_cookies() -> dict:
         return {'success': False, 'error': f'Error obteniendo cookies: {str(e)}'}
 
 
+def get_cached_availability() -> dict:
+    """
+    Obtiene la disponibilidad cacheada desde Supabase (consultada por Railway).
+
+    Returns:
+        dict con 'success', 'availability', 'timestamp' o 'error'
+    """
+    try:
+        if not is_configured():
+            return {'success': False, 'error': 'Supabase no configurado'}
+
+        supabase = get_supabase_client()
+
+        path = 'availability/availability_cache.json'
+
+        try:
+            result = supabase.storage.from_(BUCKET_NAME).download(path)
+
+            import json
+            data = json.loads(result.decode('utf-8'))
+
+            return {
+                'success': True,
+                'availability': data.get('availability', {}),
+                'timestamp': data.get('timestamp', ''),
+                'source': data.get('source', 'unknown')
+            }
+
+        except Exception as e:
+            return {'success': False, 'error': f'Archivo no encontrado: {str(e)}'}
+
+    except Exception as e:
+        return {'success': False, 'error': f'Error obteniendo disponibilidad: {str(e)}'}
+
+
 def save_auto_cookies(cookies: list) -> dict:
     """
     Guarda cookies en Supabase Storage.

@@ -1097,6 +1097,82 @@ def proxy_save():
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
 
+@app.route('/api/availability/cached', methods=['GET'])
+def get_cached_availability():
+    """
+    Obtiene la disponibilidad cacheada desde Supabase.
+    Railway consulta la disponibilidad desde el navegador y la guarda en Supabase.
+    Este endpoint devuelve esos datos cacheados.
+
+    Returns:
+        JSON con disponibilidad por tour
+    """
+    try:
+        result = storage_client.get_cached_availability()
+
+        if result['success']:
+            availability = result.get('availability', {})
+            timestamp = result.get('timestamp', '')
+
+            # Formatear respuesta similar a /api/consultar
+            formatted = {
+                "resultados": {},
+                "timestamp": timestamp,
+                "source": result.get('source', 'cache'),
+                "cached": True
+            }
+
+            for tour_key, tour_data in availability.items():
+                # Procesar timeslots para formato compatible con frontend
+                fechas = {}
+                for ts in tour_data.get('timeslots', []):
+                    fecha = ts.get('startDateTime', '')[:10]
+                    if not fecha:
+                        continue
+
+                    if fecha not in fechas:
+                        fechas[fecha] = {
+                            'fecha': fecha,
+                            'plazas_disponibles': 0,
+                            'plazas_totales': 0,
+                            'timeslots': []
+                        }
+
+                    capacity = ts.get('capacity', 0)
+                    original_capacity = ts.get('originalCapacity', capacity)
+
+                    fechas[fecha]['plazas_disponibles'] += capacity
+                    fechas[fecha]['plazas_totales'] += original_capacity
+                    fechas[fecha]['timeslots'].append({
+                        'hora': ts.get('startDateTime', '')[11:16],
+                        'capacidad': capacity,
+                        'capacidad_original': original_capacity
+                    })
+
+                # Convertir a lista y calcular totales
+                fechas_list = sorted(fechas.values(), key=lambda x: x['fecha'])
+
+                formatted['resultados'][tour_key] = {
+                    'nombre': tour_data.get('nombre', tour_key),
+                    'guid': tour_data.get('guid', ''),
+                    'total_fechas': len(fechas_list),
+                    'total_plazas': sum(f['plazas_disponibles'] for f in fechas_list),
+                    'fechas': fechas_list,
+                    'timeslots_por_fecha': {f['fecha']: f['timeslots'] for f in fechas_list}
+                }
+
+            return jsonify(formatted)
+        else:
+            return jsonify({
+                "error": result.get('error', 'No hay datos cacheados'),
+                "cached": False,
+                "hint": "Railway debe ejecutarse para obtener y cachear la disponibilidad"
+            }), 404
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
 @app.route('/api/debug/proxy', methods=['GET'])
 def debug_proxy():
     """
