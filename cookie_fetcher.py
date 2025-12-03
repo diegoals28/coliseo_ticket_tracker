@@ -26,9 +26,84 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 TOUR_URL = "https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-palatino-gruppi/"
 
+# Proxy residencial (Webshare)
+# Formato: PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS
+PROXY_HOST = os.environ.get('PROXY_HOST', '')
+PROXY_PORT = os.environ.get('PROXY_PORT', '')
+PROXY_USER = os.environ.get('PROXY_USER', '')
+PROXY_PASS = os.environ.get('PROXY_PASS', '')
+
+
+def create_proxy_extension(proxy_host, proxy_port, proxy_user, proxy_pass):
+    """Crea una extension de Chrome para autenticacion de proxy"""
+    import zipfile
+    import tempfile
+
+    manifest_json = """
+    {
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Chrome Proxy",
+        "permissions": [
+            "proxy",
+            "tabs",
+            "unlimitedStorage",
+            "storage",
+            "<all_urls>",
+            "webRequest",
+            "webRequestBlocking"
+        ],
+        "background": {
+            "scripts": ["background.js"]
+        },
+        "minimum_chrome_version":"22.0.0"
+    }
+    """
+
+    background_js = """
+    var config = {
+        mode: "fixed_servers",
+        rules: {
+            singleProxy: {
+                scheme: "http",
+                host: "%s",
+                port: parseInt(%s)
+            },
+            bypassList: ["localhost"]
+        }
+    };
+
+    chrome.proxy.settings.set({value: config, scope: "regular"}, function() {});
+
+    function callbackFn(details) {
+        return {
+            authCredentials: {
+                username: "%s",
+                password: "%s"
+            }
+        };
+    }
+
+    chrome.webRequest.onAuthRequired.addListener(
+        callbackFn,
+        {urls: ["<all_urls>"]},
+        ['blocking']
+    );
+    """ % (proxy_host, proxy_port, proxy_user, proxy_pass)
+
+    # Crear extension temporal
+    ext_dir = tempfile.mkdtemp()
+    ext_path = os.path.join(ext_dir, 'proxy_auth.zip')
+
+    with zipfile.ZipFile(ext_path, 'w') as zp:
+        zp.writestr("manifest.json", manifest_json)
+        zp.writestr("background.js", background_js)
+
+    return ext_path
+
 
 def setup_driver():
-    """Configura undetected-chromedriver con network logging"""
+    """Configura undetected-chromedriver con network logging y proxy"""
     import undetected_chromedriver as uc
 
     options = uc.ChromeOptions()
@@ -37,6 +112,22 @@ def setup_driver():
     options.add_argument('--disable-gpu')
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--disable-blink-features=AutomationControlled')
+
+    # Configurar proxy residencial si esta disponible
+    if PROXY_HOST and PROXY_PORT:
+        print(f"[Proxy] Configurando proxy residencial: {PROXY_HOST}:{PROXY_PORT}")
+
+        if PROXY_USER and PROXY_PASS:
+            # Crear extension para autenticacion
+            print(f"[Proxy] Creando extension de autenticacion...")
+            ext_path = create_proxy_extension(PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS)
+            options.add_extension(ext_path)
+            print(f"[Proxy] Extension cargada")
+        else:
+            # Sin autenticacion
+            options.add_argument(f'--proxy-server=http://{PROXY_HOST}:{PROXY_PORT}')
+    else:
+        print("[Proxy] Sin proxy configurado - usando IP directa (puede ser bloqueado)")
 
     # Habilitar logging de red para capturar cookies HttpOnly
     options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
