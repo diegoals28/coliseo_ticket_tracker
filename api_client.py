@@ -5,12 +5,45 @@ Soporta rotación de proxies para evitar bloqueos.
 """
 
 import json
+import os
 import time
 import requests
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from colosseo_config import config
 from proxy_manager import ProxyManager
+
+
+def get_webshare_proxy() -> Optional[Dict[str, str]]:
+    """
+    Obtiene el proxy de Webshare desde variables de entorno.
+
+    Variables de entorno soportadas:
+    - WEBSHARE_PROXY: URL completa del proxy (ej: http://user:pass@host:port)
+    - O individualmente: WEBSHARE_HOST, WEBSHARE_PORT, WEBSHARE_USER, WEBSHARE_PASS
+
+    Returns:
+        Diccionario de proxies para requests o None si no está configurado
+    """
+    # Opción 1: URL completa
+    proxy_url = os.getenv("WEBSHARE_PROXY", "").strip()
+    if proxy_url:
+        return {"http": proxy_url, "https": proxy_url}
+
+    # Opción 2: Variables individuales
+    host = os.getenv("WEBSHARE_HOST", "").strip()
+    port = os.getenv("WEBSHARE_PORT", "").strip()
+    user = os.getenv("WEBSHARE_USER", "").strip()
+    password = os.getenv("WEBSHARE_PASS", "").strip()
+
+    if host and port:
+        if user and password:
+            proxy_url = f"http://{user}:{password}@{host}:{port}"
+        else:
+            proxy_url = f"http://{host}:{port}"
+        return {"http": proxy_url, "https": proxy_url}
+
+    return None
 
 
 class ColosseoAPIClient:
@@ -28,16 +61,22 @@ class ColosseoAPIClient:
         self.session = None
         self.cookies = []
 
-        # Configurar proxy manager
-        use_proxy = use_proxy if use_proxy is not None else config.PROXY_ENABLED
-        if use_proxy:
-            self.proxy_manager = ProxyManager(
-                proxy_file=config.PROXY_FILE,
-                rotation_mode=config.PROXY_ROTATION_MODE,
-                reactivate_after_minutes=config.PROXY_REACTIVATE_MINUTES
-            )
-        else:
+        # Primero intentar proxy de Webshare (tiene prioridad)
+        self.webshare_proxy = get_webshare_proxy()
+        if self.webshare_proxy:
+            print(f"[Proxy] Webshare configurado: {list(self.webshare_proxy.values())[0][:40]}...")
             self.proxy_manager = None
+        else:
+            # Configurar proxy manager tradicional
+            use_proxy = use_proxy if use_proxy is not None else config.PROXY_ENABLED
+            if use_proxy:
+                self.proxy_manager = ProxyManager(
+                    proxy_file=config.PROXY_FILE,
+                    rotation_mode=config.PROXY_ROTATION_MODE,
+                    reactivate_after_minutes=config.PROXY_REACTIVATE_MINUTES
+                )
+            else:
+                self.proxy_manager = None
 
     def save_cookies(self, cookies: List[dict]) -> bool:
         """
@@ -135,10 +174,14 @@ class ColosseoAPIClient:
             # Hacer petición de prueba a la página principal
             headers = config.get_headers()
 
-            # Obtener proxy si está habilitado
+            # Obtener proxy - prioridad a Webshare
             proxies = None
             proxy_url = None
-            if self.proxy_manager and self.proxy_manager.enabled:
+            if self.webshare_proxy:
+                proxies = self.webshare_proxy
+                proxy_url = proxies.get("http", "")
+                print(f"[Proxy] Usando Webshare para validación: {proxy_url[:40]}...")
+            elif self.proxy_manager and self.proxy_manager.enabled:
                 proxies = self.proxy_manager.get_next_proxy()
                 if proxies:
                     proxy_url = proxies.get("http", "")
@@ -230,10 +273,14 @@ class ColosseoAPIClient:
         )
 
         try:
-            # Obtener proxy si está habilitado
+            # Obtener proxy - prioridad a Webshare
             proxies = None
             proxy_url = None
-            if self.proxy_manager and self.proxy_manager.enabled:
+            if self.webshare_proxy:
+                proxies = self.webshare_proxy
+                proxy_url = proxies.get("http", "")
+                print(f"[Proxy] Usando Webshare: {proxy_url[:40]}...")
+            elif self.proxy_manager and self.proxy_manager.enabled:
                 proxies = self.proxy_manager.get_next_proxy()
                 if proxies:
                     proxy_url = proxies.get("http", "")
