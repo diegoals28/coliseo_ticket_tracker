@@ -1192,7 +1192,7 @@ def save_to_supabase(cookies):
 
         data = {
             "cookies": cookies,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.utcnow().isoformat() + 'Z',
             "source": "railway-uc",
             "proxy": proxy_info
         }
@@ -1492,7 +1492,7 @@ def save_availability_to_supabase(availability_data):
 
         data = {
             "availability": availability_data,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.utcnow().isoformat() + 'Z',
             "source": "railway-browser"
         }
 

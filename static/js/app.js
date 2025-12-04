@@ -3,6 +3,22 @@ let currentResults = null;
 let currentCookies = null;
 let usingCachedData = false;
 
+// Convertir timestamp UTC a hora de Roma
+function formatTimestampRome(isoString) {
+    if (!isoString) return 'desconocido';
+    try {
+        // El timestamp de Railway está en UTC, convertir a Roma (UTC+1 invierno, UTC+2 verano)
+        const date = new Date(isoString);
+        // Añadir Z si no tiene timezone para interpretarlo como UTC
+        if (!isoString.endsWith('Z') && !isoString.includes('+')) {
+            date.setTime(date.getTime()); // Ya está en local, pero Railway usa UTC
+        }
+        return date.toLocaleString('es-ES', {timeZone: 'Europe/Rome'});
+    } catch (e) {
+        return isoString;
+    }
+}
+
 // Auto-cargar al iniciar: primero intentar cache, luego cookies
 document.addEventListener('DOMContentLoaded', async function() {
     // Intentar cargar disponibilidad cacheada primero (de Railway)
