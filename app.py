@@ -6,8 +6,42 @@ import sys
 import io
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Flask, render_template, request, jsonify, send_file
+
+
+def utc_to_rome(utc_datetime_str):
+    """
+    Convierte un datetime string UTC a hora de Roma (Europe/Rome).
+    Roma usa CET (UTC+1) en invierno y CEST (UTC+2) en verano.
+    """
+    if not utc_datetime_str:
+        return '', ''
+
+    try:
+        # Parse the UTC datetime
+        if utc_datetime_str.endswith('Z'):
+            utc_datetime_str = utc_datetime_str[:-1]
+
+        dt_utc = datetime.fromisoformat(utc_datetime_str).replace(tzinfo=timezone.utc)
+
+        # Determinar si es horario de verano (aproximado)
+        # Horario de verano en Europa: último domingo de marzo a último domingo de octubre
+        month = dt_utc.month
+        if 4 <= month <= 10:  # Abril a Octubre (aproximado)
+            offset = timedelta(hours=2)  # CEST
+        else:
+            offset = timedelta(hours=1)  # CET
+
+        dt_rome = dt_utc + offset
+
+        fecha = dt_rome.strftime('%Y-%m-%d')
+        hora = dt_rome.strftime('%H:%M')
+
+        return fecha, hora
+    except Exception:
+        # Fallback: extraer directamente
+        return utc_datetime_str[:10], utc_datetime_str[11:16]
 import pandas as pd
 from io import BytesIO
 
@@ -1126,7 +1160,12 @@ def get_cached_availability():
                 # Procesar timeslots para formato compatible con frontend
                 fechas = {}
                 for ts in tour_data.get('timeslots', []):
-                    fecha = ts.get('startDateTime', '')[:10]
+                    start_dt = ts.get('startDateTime', '')
+                    if not start_dt:
+                        continue
+
+                    # Convertir UTC a hora de Roma
+                    fecha, hora = utc_to_rome(start_dt)
                     if not fecha:
                         continue
 
@@ -1144,7 +1183,7 @@ def get_cached_availability():
                     fechas[fecha]['plazas_disponibles'] += capacity
                     fechas[fecha]['plazas_totales'] += original_capacity
                     fechas[fecha]['timeslots'].append({
-                        'hora': ts.get('startDateTime', '')[11:16],
+                        'hora': hora,
                         'capacidad': capacity,
                         'capacidad_original': original_capacity
                     })

@@ -25,7 +25,7 @@ async function cargarDisponibilidadCacheada() {
         if (response.ok && data.resultados && Object.keys(data.resultados).length > 0) {
             usingCachedData = true;
 
-            const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'desconocido';
+            const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString('es-ES', {timeZone: 'Europe/Rome'}) : 'desconocido';
             actualizarEstadoCookies('success',
                 'Datos cacheados disponibles',
                 `Actualizado: ${timestamp} | Fuente: ${data.source || 'Railway'}`
@@ -220,7 +220,7 @@ async function cargarCookiesAutomaticas() {
         if (data.success && data.cookies) {
             currentCookies = data.cookies;
 
-            const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'desconocido';
+            const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString('es-ES', {timeZone: 'Europe/Rome'}) : 'desconocido';
             actualizarEstadoCookies('success',
                 `Cookies activas (${data.count})`,
                 `Actualizadas: ${timestamp} | Fuente: ${data.source || 'automatico'}`
