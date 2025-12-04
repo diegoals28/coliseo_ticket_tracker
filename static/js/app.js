@@ -1,11 +1,203 @@
 // Estado global
 let currentResults = null;
 let currentCookies = null;
+let usingCachedData = false;
 
-// Auto-cargar cookies de Supabase al iniciar
+// Auto-cargar al iniciar: primero intentar cache, luego cookies
 document.addEventListener('DOMContentLoaded', async function() {
-    await cargarCookiesAutomaticas();
+    // Intentar cargar disponibilidad cacheada primero (de Railway)
+    const cachedLoaded = await cargarDisponibilidadCacheada();
+
+    if (!cachedLoaded) {
+        // Si no hay cache, cargar cookies y consultar directamente
+        await cargarCookiesAutomaticas();
+    }
 });
+
+// Cargar disponibilidad cacheada desde Supabase (guardada por Railway)
+async function cargarDisponibilidadCacheada() {
+    actualizarEstadoCookies('loading', 'Cargando datos...', 'Buscando disponibilidad en cache');
+
+    try {
+        const response = await fetch('/api/availability/cached');
+        const data = await response.json();
+
+        if (response.ok && data.resultados && Object.keys(data.resultados).length > 0) {
+            usingCachedData = true;
+
+            const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'desconocido';
+            actualizarEstadoCookies('success',
+                'Datos cacheados disponibles',
+                `Actualizado: ${timestamp} | Fuente: ${data.source || 'Railway'}`
+            );
+
+            // Mostrar los resultados cacheados
+            currentResults = data;
+            mostrarResultadosCacheados(data);
+
+            return true;
+        } else {
+            console.log('[Cache] No hay datos cacheados:', data.error);
+            return false;
+        }
+    } catch (error) {
+        console.error('[Cache] Error cargando cache:', error);
+        return false;
+    }
+}
+
+// Mostrar resultados desde cache (formato ligeramente diferente)
+function mostrarResultadosCacheados(data) {
+    const summaryHtml = `
+        <div class="summary-card">
+            <p class="summary-card-label">Tours Disponibles</p>
+            <p class="summary-card-value">${Object.keys(data.resultados).length}</p>
+        </div>
+        <div class="summary-card">
+            <p class="summary-card-label">Fuente</p>
+            <p class="summary-card-value" style="font-size: 1rem;">Cache (Railway)</p>
+        </div>
+    `;
+    document.getElementById('summaryCards').innerHTML = summaryHtml;
+
+    let toursHtml = '';
+
+    for (const [tourKey, tourData] of Object.entries(data.resultados)) {
+        const tourId = tourKey.replace(/[^a-z0-9]/gi, '_');
+
+        toursHtml += `
+            <div class="tour-section">
+                <div class="tour-section-header">
+                    <h3 class="tour-section-title">${tourData.nombre}</h3>
+                    <div class="tour-section-stats">
+                        <span><strong>${tourData.total_fechas}</strong> fechas disponibles</span>
+                        <span><strong>${tourData.total_plazas.toLocaleString()}</strong> plazas totales</span>
+                    </div>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="cambiarTab('${tourId}', 'fechas', event)">
+                        ${ICONS.calendar} Por Fechas
+                    </button>
+                </div>
+
+                <div class="tab-content active" id="${tourId}_fechas">
+                    ${generarTablaFechasCacheadas(tourData)}
+                </div>
+            </div>
+        `;
+    }
+
+    document.getElementById('tourResults').innerHTML = toursHtml;
+    document.getElementById('timestamp').textContent = `Datos cacheados: ${data.timestamp || 'desconocido'}`;
+    document.getElementById('results').classList.add('active');
+    document.getElementById('loading').classList.remove('active');
+}
+
+// Generar tabla de fechas desde datos cacheados
+function generarTablaFechasCacheadas(tourData) {
+    const tourId = (tourData.guid || 'tour').substring(0, 8);
+    let html = '';
+
+    for (const fecha of tourData.fechas) {
+        const timeslots = fecha.timeslots || [];
+        const fechaId = tourId + '_' + fecha.fecha.replace(/[^a-z0-9]/gi, '_');
+
+        // Calcular estado
+        const porcentajeOcupado = fecha.plazas_totales > 0
+            ? ((fecha.plazas_totales - fecha.plazas_disponibles) / fecha.plazas_totales * 100).toFixed(1)
+            : 0;
+
+        let estado = 'DISPONIBLE';
+        let nivel = 'alta';
+        if (fecha.plazas_disponibles === 0) {
+            estado = 'AGOTADO';
+            nivel = 'agotado';
+        } else if (porcentajeOcupado > 70) {
+            estado = 'POCA DISPONIBILIDAD';
+            nivel = 'baja';
+        } else if (porcentajeOcupado > 30) {
+            estado = 'DISPONIBILIDAD MODERADA';
+            nivel = 'media';
+        }
+
+        // Obtener dia de la semana
+        let diaSemana = '';
+        try {
+            const fechaObj = new Date(fecha.fecha + 'T00:00:00');
+            diaSemana = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'][fechaObj.getDay()];
+        } catch (e) {}
+
+        html += `
+            <div class="fecha-row" onclick="toggleTimeslots('${fechaId}')">
+                <div class="fecha-cell fecha-fecha">${fecha.fecha}</div>
+                <div class="fecha-cell fecha-dia">${diaSemana}</div>
+                <div class="fecha-cell fecha-plazas"><strong>${fecha.plazas_disponibles.toLocaleString()}</strong> / ${fecha.plazas_totales.toLocaleString()}</div>
+                <div class="fecha-cell fecha-ocupado">${porcentajeOcupado}%</div>
+                <div class="fecha-cell fecha-estado"><span class="badge badge-${nivel}">${estado}</span></div>
+                <div class="fecha-cell fecha-horarios expand-hint">${ICONS.chevronDown} ${timeslots.length} horarios</div>
+            </div>
+            <div class="timeslots-panel" id="timeslots_${fechaId}">
+                ${generarTimeslotsGridCacheados(timeslots)}
+            </div>
+        `;
+    }
+
+    return `
+        <div class="fechas-container">
+            <div class="fechas-header">
+                <div class="fecha-cell fecha-fecha">Fecha</div>
+                <div class="fecha-cell fecha-dia">Dia</div>
+                <div class="fecha-cell fecha-plazas">Plazas Disponibles</div>
+                <div class="fecha-cell fecha-ocupado">% Ocupado</div>
+                <div class="fecha-cell fecha-estado">Estado</div>
+                <div class="fecha-cell fecha-horarios">Horarios</div>
+            </div>
+            ${html}
+        </div>
+    `;
+}
+
+// Generar grid de timeslots desde cache
+function generarTimeslotsGridCacheados(timeslots) {
+    if (!timeslots || timeslots.length === 0) {
+        return '<p style="padding: 15px; color: #666;">No hay horarios detallados disponibles</p>';
+    }
+
+    let html = '<div class="timeslots-grid">';
+
+    const timeslotsSorted = [...timeslots].sort((a, b) => {
+        const horaA = a.hora || '00:00';
+        const horaB = b.hora || '00:00';
+        return horaA.localeCompare(horaB);
+    });
+
+    for (const ts of timeslotsSorted) {
+        const capacidad = ts.capacidad || 0;
+        const capacidadOriginal = ts.capacidad_original || capacidad;
+        const porcentajeOcupado = capacidadOriginal > 0
+            ? ((capacidadOriginal - capacidad) / capacidadOriginal * 100)
+            : 0;
+
+        let clase = 'disponible';
+        if (capacidad === 0) {
+            clase = 'agotado';
+        } else if (porcentajeOcupado > 70) {
+            clase = 'parcial';
+        }
+
+        html += `
+            <div class="timeslot-card ${clase}">
+                <div class="timeslot-hora">${ts.hora || 'N/A'}</div>
+                <div class="timeslot-plazas">${capacidad} / ${capacidadOriginal}</div>
+                <div class="timeslot-plazas">${porcentajeOcupado.toFixed(0)}%</div>
+            </div>
+        `;
+    }
+
+    html += '</div>';
+    return html;
+}
 
 // Actualizar estado visual de cookies
 function actualizarEstadoCookies(estado, titulo, detalle) {
