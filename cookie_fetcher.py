@@ -33,6 +33,46 @@ PROXY_PORT = os.environ.get('PROXY_PORT', '')
 PROXY_USER = os.environ.get('PROXY_USER', '')
 PROXY_PASS = os.environ.get('PROXY_PASS', '')
 
+# Lista de proxies adicionales (formato: host:port:user:pass, separados por coma)
+# Ejemplo: PROXY_LIST="host1:port1:user1:pass1,host2:port2:user2:pass2"
+PROXY_LIST_STR = os.environ.get('PROXY_LIST', '')
+
+def parse_proxy_list():
+    """Parsea la lista de proxies desde la variable de entorno"""
+    proxies = []
+
+    # Agregar proxy principal si existe
+    if PROXY_HOST and PROXY_PORT:
+        proxies.append({
+            'host': PROXY_HOST,
+            'port': PROXY_PORT,
+            'user': PROXY_USER,
+            'pass': PROXY_PASS
+        })
+
+    # Agregar proxies adicionales de PROXY_LIST
+    if PROXY_LIST_STR:
+        for proxy_str in PROXY_LIST_STR.split(','):
+            proxy_str = proxy_str.strip()
+            if not proxy_str:
+                continue
+
+            parts = proxy_str.split(':')
+            if len(parts) >= 2:
+                proxy = {
+                    'host': parts[0],
+                    'port': parts[1],
+                    'user': parts[2] if len(parts) > 2 else '',
+                    'pass': parts[3] if len(parts) > 3 else ''
+                }
+                proxies.append(proxy)
+
+    return proxies
+
+# Lista global de proxies
+PROXIES = parse_proxy_list()
+current_proxy_index = 0
+
 
 def create_proxy_extension(proxy_host, proxy_port, proxy_user, proxy_pass):
     """Crea una extension de Chrome para autenticacion de proxy"""
@@ -102,7 +142,27 @@ def create_proxy_extension(proxy_host, proxy_port, proxy_user, proxy_pass):
     return ext_path
 
 
-def setup_driver():
+def get_current_proxy():
+    """Obtiene el proxy actual de la lista"""
+    global current_proxy_index
+    if not PROXIES:
+        return None
+    return PROXIES[current_proxy_index % len(PROXIES)]
+
+
+def rotate_proxy():
+    """Rota al siguiente proxy de la lista"""
+    global current_proxy_index
+    if not PROXIES:
+        return None
+
+    current_proxy_index = (current_proxy_index + 1) % len(PROXIES)
+    proxy = PROXIES[current_proxy_index]
+    print(f"[Proxy] Rotando a proxy {current_proxy_index + 1}/{len(PROXIES)}: {proxy['host']}:{proxy['port']}")
+    return proxy
+
+
+def setup_driver(proxy_override=None):
     """Configura undetected-chromedriver con network logging y proxy"""
     import undetected_chromedriver as uc
 
@@ -113,19 +173,21 @@ def setup_driver():
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--disable-blink-features=AutomationControlled')
 
-    # Configurar proxy residencial si esta disponible
-    if PROXY_HOST and PROXY_PORT:
-        print(f"[Proxy] Configurando proxy residencial: {PROXY_HOST}:{PROXY_PORT}")
+    # Usar proxy especificado o el actual de la lista
+    proxy = proxy_override or get_current_proxy()
 
-        if PROXY_USER and PROXY_PASS:
+    if proxy:
+        print(f"[Proxy] Configurando proxy residencial: {proxy['host']}:{proxy['port']}")
+
+        if proxy.get('user') and proxy.get('pass'):
             # Crear extension para autenticacion
             print(f"[Proxy] Creando extension de autenticacion...")
-            ext_path = create_proxy_extension(PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS)
+            ext_path = create_proxy_extension(proxy['host'], proxy['port'], proxy['user'], proxy['pass'])
             options.add_extension(ext_path)
             print(f"[Proxy] Extension cargada")
         else:
             # Sin autenticacion
-            options.add_argument(f'--proxy-server=http://{PROXY_HOST}:{PROXY_PORT}')
+            options.add_argument(f"--proxy-server=http://{proxy['host']}:{proxy['port']}")
     else:
         print("[Proxy] Sin proxy configurado - usando IP directa (puede ser bloqueado)")
 
@@ -1624,28 +1686,23 @@ def update_historico_excel(supabase, availability_data):
         return False
 
 
-def main():
-    print("=" * 60)
-    print("COOKIE FETCHER - Railway + undetected-chromedriver")
-    print(f"Timestamp: {datetime.now().isoformat()}")
-    print("=" * 60)
-
-    # Iniciar display virtual
-    start_xvfb()
-
+def try_with_proxy(proxy=None, attempt=1):
+    """
+    Intenta obtener cookies con un proxy específico.
+    Retorna (success, cookies, driver) o (False, None, None) si falla.
+    """
     driver = None
     try:
-        # Configurar driver
-        driver = setup_driver()
+        driver = setup_driver(proxy_override=proxy)
 
         # Navegar a la pagina
         print(f"\n[Navigate] Abriendo {TOUR_URL[:50]}...")
         driver.get(TOUR_URL)
 
-        # Esperar Octofence
-        if not wait_for_octofence(driver):
-            print("[Error] No se pudo pasar Octofence")
-            return 1
+        # Esperar Octofence - si falla, probablemente IP bloqueada
+        if not wait_for_octofence(driver, timeout=60):
+            print(f"[Attempt {attempt}] Octofence no pasado - posible bloqueo de IP")
+            return False, None, driver
 
         # Completar flujo de reserva
         time.sleep(3)
@@ -1659,52 +1716,121 @@ def main():
         cookies = get_cookies(driver)
 
         if len(cookies) >= 5:
-            print(f"\n[Success] {len(cookies)} cookies obtenidas")
-            sys.stdout.flush()
-
-            # Verificar cookies criticas
-            names = [c['name'] for c in cookies]
-            critical = ['PHPSESSID', 'octofence-waap-id', 'octofence-waap-sessid']
-            has_critical = any(c in names for c in critical)
-
-            if has_critical:
-                print("[Success] Cookies criticas encontradas!")
-            else:
-                print("[Warning] Faltan algunas cookies criticas, pero intentando guardar...")
-            sys.stdout.flush()
-
-            # Guardar cookies en Supabase PRIMERO (antes de disponibilidad)
-            print("\n[Supabase] Guardando cookies...")
-            sys.stdout.flush()
-            save_to_supabase(cookies)
-
-            # Consultar disponibilidad completa desde el navegador
-            print("\n[Availability] Iniciando consulta de disponibilidad...")
-            sys.stdout.flush()
-            try:
-                availability = fetch_availability_from_browser(driver)
-                if availability:
-                    save_availability_to_supabase(availability)
-                else:
-                    print("[Availability] No se pudo obtener disponibilidad")
-            except Exception as e:
-                print(f"[Availability] ERROR: {e}")
-                import traceback
-                traceback.print_exc()
-            sys.stdout.flush()
-
-            # Guardar local como backup
-            with open('cookies_colosseo.json', 'w') as f:
-                json.dump(cookies, f, indent=2)
-            print("[Local] Backup guardado")
-
-            print("\n" + "=" * 60)
-            print("RESULTADO: EXITO")
-            print("=" * 60)
-            return 0
+            return True, cookies, driver
         else:
-            print(f"\n[Error] Solo {len(cookies)} cookies obtenidas")
-            return 1
+            print(f"[Attempt {attempt}] Solo {len(cookies)} cookies obtenidas")
+            return False, None, driver
+
+    except Exception as e:
+        print(f"[Attempt {attempt}] Error: {e}")
+        return False, None, driver
+
+
+def main():
+    print("=" * 60)
+    print("COOKIE FETCHER - Railway + undetected-chromedriver")
+    print(f"Timestamp: {datetime.now().isoformat()}")
+    print("=" * 60)
+
+    # Mostrar proxies disponibles
+    print(f"\n[Proxy] {len(PROXIES)} proxies configurados")
+    for i, p in enumerate(PROXIES):
+        print(f"  {i+1}. {p['host']}:{p['port']}")
+    sys.stdout.flush()
+
+    # Iniciar display virtual
+    start_xvfb()
+
+    max_attempts = max(len(PROXIES), 1) if PROXIES else 1
+    driver = None
+    cookies = None
+    success = False
+
+    for attempt in range(1, max_attempts + 1):
+        print(f"\n{'='*40}")
+        print(f"INTENTO {attempt}/{max_attempts}")
+        print(f"{'='*40}")
+        sys.stdout.flush()
+
+        # Cerrar driver anterior si existe
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+            driver = None
+
+        # Intentar con el proxy actual
+        success, cookies, driver = try_with_proxy(attempt=attempt)
+
+        if success:
+            print(f"\n[Success] Intento {attempt} exitoso!")
+            break
+        else:
+            # Rotar al siguiente proxy
+            if len(PROXIES) > 1:
+                next_proxy = rotate_proxy()
+                print(f"[Retry] Rotando al siguiente proxy...")
+            else:
+                print(f"[Retry] No hay más proxies para probar")
+                break
+
+    if not success:
+        print("\n" + "=" * 60)
+        print("RESULTADO: FALLO - Todos los proxies bloqueados")
+        print("=" * 60)
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+        return 1
+
+    # Proceso exitoso - continuar con guardar cookies y disponibilidad
+    try:
+        print(f"\n[Success] {len(cookies)} cookies obtenidas")
+        sys.stdout.flush()
+
+        # Verificar cookies criticas
+        names = [c['name'] for c in cookies]
+        critical = ['PHPSESSID', 'octofence-waap-id', 'octofence-waap-sessid']
+        has_critical = any(c in names for c in critical)
+
+        if has_critical:
+            print("[Success] Cookies criticas encontradas!")
+        else:
+            print("[Warning] Faltan algunas cookies criticas, pero intentando guardar...")
+        sys.stdout.flush()
+
+        # Guardar cookies en Supabase PRIMERO (antes de disponibilidad)
+        print("\n[Supabase] Guardando cookies...")
+        sys.stdout.flush()
+        save_to_supabase(cookies)
+
+        # Consultar disponibilidad completa desde el navegador
+        print("\n[Availability] Iniciando consulta de disponibilidad...")
+        sys.stdout.flush()
+        try:
+            availability = fetch_availability_from_browser(driver)
+            if availability:
+                save_availability_to_supabase(availability)
+            else:
+                print("[Availability] No se pudo obtener disponibilidad")
+        except Exception as e:
+            print(f"[Availability] ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+        sys.stdout.flush()
+
+        # Guardar local como backup
+        with open('cookies_colosseo.json', 'w') as f:
+            json.dump(cookies, f, indent=2)
+        print("[Local] Backup guardado")
+
+        print("\n" + "=" * 60)
+        print("RESULTADO: EXITO")
+        print("=" * 60)
+        return 0
 
     except Exception as e:
         print(f"\n[Error] {e}")
