@@ -1461,6 +1461,7 @@ def main():
 
         if len(cookies) >= 5:
             print(f"\n[Success] {len(cookies)} cookies obtenidas")
+            sys.stdout.flush()
 
             # Verificar cookies criticas
             names = [c['name'] for c in cookies]
@@ -1471,18 +1472,27 @@ def main():
                 print("[Success] Cookies criticas encontradas!")
             else:
                 print("[Warning] Faltan algunas cookies criticas, pero intentando guardar...")
+            sys.stdout.flush()
+
+            # Guardar cookies en Supabase PRIMERO (antes de disponibilidad)
+            print("\n[Supabase] Guardando cookies...")
+            sys.stdout.flush()
+            save_to_supabase(cookies)
 
             # Consultar disponibilidad completa desde el navegador
-            # Esto evita el problema de fingerprinting de Octofence
             print("\n[Availability] Iniciando consulta de disponibilidad...")
-            availability = fetch_availability_from_browser(driver)
-            if availability:
-                save_availability_to_supabase(availability)
-            else:
-                print("[Availability] No se pudo obtener disponibilidad")
-
-            # Guardar cookies en Supabase
-            save_to_supabase(cookies)
+            sys.stdout.flush()
+            try:
+                availability = fetch_availability_from_browser(driver)
+                if availability:
+                    save_availability_to_supabase(availability)
+                else:
+                    print("[Availability] No se pudo obtener disponibilidad")
+            except Exception as e:
+                print(f"[Availability] ERROR: {e}")
+                import traceback
+                traceback.print_exc()
+            sys.stdout.flush()
 
             # Guardar local como backup
             with open('cookies_colosseo.json', 'w') as f:
