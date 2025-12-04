@@ -1173,6 +1173,45 @@ def get_cached_availability():
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
 
+@app.route('/api/historico/upload-base', methods=['POST'])
+def upload_historico_base():
+    """
+    Sube el archivo histórico local a Supabase como base inicial.
+    Solo funciona si existe historico_disponibilidad.xlsx localmente.
+    """
+    try:
+        filename = 'historico_disponibilidad.xlsx'
+
+        if not os.path.exists(filename):
+            return jsonify({"error": "No existe archivo historico local"}), 404
+
+        if not storage_client.is_configured():
+            return jsonify({"error": "Supabase no configurado"}), 400
+
+        # Leer archivo local
+        with open(filename, 'rb') as f:
+            file_bytes = f.read()
+
+        # Subir a Supabase
+        result = storage_client.upload_file(
+            file_bytes,
+            filename,
+            folder='historico'
+        )
+
+        if result['success']:
+            return jsonify({
+                "success": True,
+                "message": f"Historico subido ({len(file_bytes)} bytes)",
+                "path": result.get('path', '')
+            })
+        else:
+            return jsonify({"error": result.get('error', 'Error subiendo')}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
 @app.route('/api/debug/proxy', methods=['GET'])
 def debug_proxy():
     """

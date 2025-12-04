@@ -1418,10 +1418,209 @@ def save_availability_to_supabase(availability_data):
         )
 
         print("[Supabase] Disponibilidad guardada exitosamente")
+
+        # También actualizar el histórico Excel
+        update_historico_excel(supabase, availability_data)
+
         return True
 
     except Exception as e:
         print(f"[Supabase] Error guardando disponibilidad: {e}")
+        return False
+
+
+def update_historico_excel(supabase, availability_data):
+    """
+    Actualiza el archivo histórico Excel en Supabase.
+    Descarga el existente, agrega nueva columna con datos actuales, y lo sube.
+    """
+    from io import BytesIO
+
+    try:
+        import pandas as pd
+        from openpyxl import load_workbook, Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+    except ImportError as e:
+        print(f"[Historico] Dependencias no disponibles: {e}")
+        return False
+
+    bucket = 'colosseo-files'
+    path = 'historico/historico_disponibilidad.xlsx'
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    print(f"\n[Historico] Actualizando historico Excel...")
+
+    try:
+        # Intentar descargar archivo existente
+        try:
+            existing_data = supabase.storage.from_(bucket).download(path)
+            wb = load_workbook(BytesIO(existing_data))
+            print(f"[Historico] Archivo existente descargado ({len(existing_data)} bytes)")
+        except Exception as e:
+            print(f"[Historico] No hay archivo existente, creando nuevo: {e}")
+            wb = Workbook()
+            if 'Sheet' in wb.sheetnames:
+                wb.remove(wb['Sheet'])
+
+        # Procesar cada tour
+        for tour_key, tour_data in availability_data.items():
+            sheet_name = tour_key[:31]  # Max 31 chars para nombre de hoja
+            timeslots = tour_data.get('timeslots', [])
+
+            if not timeslots:
+                print(f"[Historico] {tour_key}: sin timeslots")
+                continue
+
+            # Crear diccionario de (fecha, hora) -> capacidad
+            datos_actuales = {}
+            for ts in timeslots:
+                start = ts.get('startDateTime', '')
+                if not start:
+                    continue
+
+                # Parsear fecha y hora (formato: 2025-12-04T09:00:00Z)
+                try:
+                    fecha = start[:10]  # 2025-12-04
+                    hora = start[11:16]  # 09:00
+                    capacidad = ts.get('capacity', 0)
+                    capacidad_original = ts.get('originalCapacity', capacidad)
+
+                    key = (fecha, hora)
+                    datos_actuales[key] = {
+                        'capacidad': capacidad,
+                        'capacidad_original': capacidad_original
+                    }
+                except:
+                    continue
+
+            if not datos_actuales:
+                continue
+
+            # Crear o actualizar hoja
+            if sheet_name not in wb.sheetnames:
+                ws = wb.create_sheet(sheet_name)
+
+                # Headers fijos
+                ws['A1'] = 'Fecha'
+                ws['B1'] = 'Hora'
+                ws['C1'] = 'Capacidad Total'
+
+                header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+                header_font = Font(color='FFFFFF', bold=True)
+
+                for col in ['A1', 'B1', 'C1']:
+                    ws[col].fill = header_fill
+                    ws[col].font = header_font
+                    ws[col].alignment = Alignment(horizontal='center')
+
+                ws.column_dimensions['A'].width = 12
+                ws.column_dimensions['B'].width = 8
+                ws.column_dimensions['C'].width = 14
+
+                # Escribir filas iniciales
+                row = 2
+                for (fecha, hora), datos in sorted(datos_actuales.items()):
+                    ws[f'A{row}'] = fecha
+                    ws[f'B{row}'] = hora
+                    ws[f'C{row}'] = datos['capacidad_original']
+                    row += 1
+
+                col_num = 4
+            else:
+                ws = wb[sheet_name]
+
+                # Leer filas existentes
+                filas_existentes = {}
+                for row in range(2, ws.max_row + 1):
+                    fecha_cell = ws[f'A{row}'].value
+                    hora_cell = ws[f'B{row}'].value
+                    if fecha_cell and hora_cell:
+                        key = (str(fecha_cell), str(hora_cell))
+                        filas_existentes[key] = row
+
+                # Agregar horarios nuevos
+                next_row = ws.max_row + 1
+                for (fecha, hora) in sorted(datos_actuales.keys()):
+                    if (fecha, hora) not in filas_existentes:
+                        ws[f'A{next_row}'] = fecha
+                        ws[f'B{next_row}'] = hora
+                        ws[f'C{next_row}'] = datos_actuales[(fecha, hora)]['capacidad_original']
+                        filas_existentes[(fecha, hora)] = next_row
+                        next_row += 1
+
+                col_num = ws.max_column + 1
+
+            # Agregar columna con timestamp actual
+            col_letter = get_column_letter(col_num)
+
+            # Header
+            ws[f'{col_letter}1'] = timestamp
+            ws[f'{col_letter}1'].fill = PatternFill(start_color='70AD47', end_color='70AD47', fill_type='solid')
+            ws[f'{col_letter}1'].font = Font(color='FFFFFF', bold=True)
+            ws[f'{col_letter}1'].alignment = Alignment(horizontal='center')
+            ws.column_dimensions[col_letter].width = 14
+
+            # Llenar datos
+            for row in range(2, ws.max_row + 1):
+                fecha_cell = ws[f'A{row}'].value
+                hora_cell = ws[f'B{row}'].value
+
+                if fecha_cell and hora_cell:
+                    key = (str(fecha_cell), str(hora_cell))
+
+                    if key in datos_actuales:
+                        capacidad = datos_actuales[key]['capacidad']
+                        capacidad_orig = datos_actuales[key]['capacidad_original']
+                    else:
+                        capacidad = '-'
+                        capacidad_orig = 0
+
+                    cell = ws[f'{col_letter}{row}']
+                    cell.value = capacidad
+                    cell.alignment = Alignment(horizontal='center')
+
+                    # Formato condicional
+                    if capacidad == '-':
+                        cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+                        cell.font = Font(color='999999', italic=True)
+                    elif capacidad == 0:
+                        cell.fill = PatternFill(start_color='FF6B6B', end_color='FF6B6B', fill_type='solid')
+                        cell.font = Font(color='FFFFFF', bold=True)
+                    elif capacidad_orig > 0:
+                        porcentaje = (capacidad / capacidad_orig) * 100
+                        if porcentaje < 30:
+                            cell.fill = PatternFill(start_color='FFE066', end_color='FFE066', fill_type='solid')
+                        elif porcentaje > 70:
+                            cell.fill = PatternFill(start_color='95E1D3', end_color='95E1D3', fill_type='solid')
+
+            print(f"[Historico] {sheet_name}: {len(datos_actuales)} horarios actualizados")
+
+        # Guardar y subir
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        file_bytes = output.getvalue()
+
+        # Eliminar archivo anterior
+        try:
+            supabase.storage.from_(bucket).remove([path])
+        except:
+            pass
+
+        # Subir
+        supabase.storage.from_(bucket).upload(
+            path, file_bytes,
+            file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "upsert": "true"}
+        )
+
+        print(f"[Historico] Archivo subido exitosamente ({len(file_bytes)} bytes)")
+        return True
+
+    except Exception as e:
+        print(f"[Historico] Error actualizando historico: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
