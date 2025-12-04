@@ -1308,10 +1308,20 @@ def fetch_availability_from_browser(driver):
                                             request_id = log.get('params', {}).get('requestId')
                                             try:
                                                 body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
-                                                data = json_module.loads(body.get('body', ''))
-                                                if data and 'timeslots' in data:
-                                                    tour_data['timeslots'].extend(data['timeslots'])
-                                                    print(f"  +{len(data['timeslots'])} timeslots del mes {i+1}")
+                                                response_data = json_module.loads(body.get('body', ''))
+                                                # Check for timeslots in data field (same as main loop)
+                                                timeslots = None
+                                                if 'timeslots' in response_data:
+                                                    timeslots = response_data.get('timeslots', [])
+                                                elif 'data' in response_data:
+                                                    inner_data = response_data.get('data', {})
+                                                    if isinstance(inner_data, dict) and 'timeslots' in inner_data:
+                                                        timeslots = inner_data.get('timeslots', [])
+                                                    elif isinstance(inner_data, list):
+                                                        timeslots = inner_data
+                                                if timeslots:
+                                                    tour_data['timeslots'].extend(timeslots)
+                                                    print(f"  +{len(timeslots)} timeslots del mes {i+1}")
                                             except:
                                                 pass
                                 except:
