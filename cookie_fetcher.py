@@ -1185,12 +1185,16 @@ def test_api_with_cookies(driver, cookies):
 
 def fetch_availability_from_browser(driver):
     """
-    Captura la disponibilidad desde los logs de red del navegador.
-    Navega a las páginas de los tours y captura las respuestas de calendars_month.
+    Consulta la disponibilidad usando las cookies del navegador.
+
+    ESTRATEGIA:
+    1. Navegar a la página del tour - esto carga el calendario automáticamente
+    2. Capturar la respuesta de calendars_month de los network logs
+    3. Si no funciona, intentar AJAX directo
     """
     import json as json_module
 
-    print("\n[Availability] Capturando disponibilidad desde navegador...")
+    print("\n[Availability] Consultando disponibilidad via API...")
 
     TOURS = {
         "24h-grupos": {
@@ -1219,115 +1223,143 @@ def fetch_availability_from_browser(driver):
         }
 
         try:
-            # Navegar a la página del tour - esto dispara automáticamente calendars_month
-            print(f"  Navegando a {tour_info['url'][:50]}...")
+            # PASO 1: Navegar a la página del tour para que cargue el calendario
+            print(f"  Navegando a pagina del tour...")
             driver.get(tour_info['url'])
-            time.sleep(5)  # Esperar a que cargue el calendario
+            time.sleep(8)
 
-            # Capturar respuestas de calendars_month desde los logs de red
-            print("  Buscando respuestas de calendars_month en network logs...")
+            # PASO 2: Capturar respuesta del calendario desde network logs
+            print("  Capturando respuesta del calendario...")
             logs = driver.get_log('performance')
+            print(f"  Network logs: {len(logs)} entradas")
 
             for entry in logs:
                 try:
                     log = json_module.loads(entry['message'])['message']
                     method = log.get('method', '')
 
-                    # Buscar respuestas de Network.responseReceived
                     if method == 'Network.responseReceived':
                         response = log.get('params', {}).get('response', {})
                         url = response.get('url', '')
 
                         if 'calendars_month' in url:
                             request_id = log.get('params', {}).get('requestId')
-                            print(f"  Encontrada respuesta calendars_month (requestId: {request_id})")
-
-                            # Obtener el body de la respuesta
                             try:
                                 body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
                                 body_text = body.get('body', '')
-                                print(f"  Body length: {len(body_text)} chars")
-
                                 if body_text:
                                     response_data = json_module.loads(body_text)
-                                    print(f"  Response keys: {list(response_data.keys()) if isinstance(response_data, dict) else type(response_data)}")
 
-                                    # La respuesta puede tener timeslots directamente o dentro de 'data'
+                                    # Buscar timeslots
                                     timeslots = None
                                     if 'timeslots' in response_data:
                                         timeslots = response_data.get('timeslots', [])
                                     elif 'data' in response_data:
-                                        inner_data = response_data.get('data', {})
-                                        if isinstance(inner_data, dict) and 'timeslots' in inner_data:
-                                            timeslots = inner_data.get('timeslots', [])
-                                        elif isinstance(inner_data, list):
-                                            # data puede ser directamente la lista de timeslots
-                                            timeslots = inner_data
-                                        print(f"  Inner data keys: {list(inner_data.keys()) if isinstance(inner_data, dict) else f'list[{len(inner_data)}]'}")
+                                        inner = response_data.get('data', {})
+                                        if isinstance(inner, dict) and 'timeslots' in inner:
+                                            timeslots = inner.get('timeslots', [])
+                                        elif isinstance(inner, list):
+                                            timeslots = inner
 
                                     if timeslots:
-                                        print(f"  Capturados {len(timeslots)} timeslots!")
                                         tour_data['timeslots'].extend(timeslots)
-                                    elif response_data.get('message'):
-                                        print(f"  API Error: {response_data.get('message', '')[:50]}")
-                                    else:
-                                        print(f"  No timeslots found in response")
-                                else:
-                                    print(f"  Body vacío")
-                            except Exception as e:
-                                print(f"  Error obteniendo body: {str(e)[:80]}")
-
-                except Exception as e:
+                                        print(f"    +{len(timeslots)} timeslots desde network logs")
+                            except:
+                                pass
+                except:
                     continue
 
-            # Si no encontramos en logs, intentar click en meses siguientes del calendario
-            if not tour_data['timeslots']:
-                print("  No se encontraron timeslots en logs, intentando navegar calendario...")
+            # PASO 3: Si capturamos timeslots, intentar AJAX para meses adicionales
+            if tour_data['timeslots']:
+                print(f"  Capturados {len(tour_data['timeslots'])} timeslots del mes actual")
+                print("  Intentando obtener meses adicionales via AJAX...")
 
-                # Click en los botones de mes siguiente para cargar más datos
-                for i in range(5):  # 5 meses adicionales
-                    try:
-                        next_btn = driver.execute_script("""
-                            var btn = document.querySelector('.ui-datepicker-next, [data-handler="next"]');
-                            if (btn && btn.offsetParent !== null) {
-                                btn.click();
-                                return true;
-                            }
-                            return false;
-                        """)
-                        if next_btn:
-                            time.sleep(2)
-                            # Re-capturar logs después de cada click
-                            new_logs = driver.get_log('performance')
-                            for entry in new_logs:
-                                try:
-                                    log = json_module.loads(entry['message'])['message']
-                                    if log.get('method') == 'Network.responseReceived':
-                                        response = log.get('params', {}).get('response', {})
-                                        if 'calendars_month' in response.get('url', ''):
-                                            request_id = log.get('params', {}).get('requestId')
-                                            try:
-                                                body = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
-                                                response_data = json_module.loads(body.get('body', ''))
-                                                # Check for timeslots in data field (same as main loop)
-                                                timeslots = None
-                                                if 'timeslots' in response_data:
-                                                    timeslots = response_data.get('timeslots', [])
-                                                elif 'data' in response_data:
-                                                    inner_data = response_data.get('data', {})
-                                                    if isinstance(inner_data, dict) and 'timeslots' in inner_data:
-                                                        timeslots = inner_data.get('timeslots', [])
-                                                    elif isinstance(inner_data, list):
-                                                        timeslots = inner_data
-                                                if timeslots:
-                                                    tour_data['timeslots'].extend(timeslots)
-                                                    print(f"  +{len(timeslots)} timeslots del mes {i+1}")
-                                            except:
-                                                pass
-                                except:
-                                    continue
-                    except Exception as e:
-                        print(f"  Error navegando mes {i+1}: {str(e)[:30]}")
+            # Consultar meses adicionales
+            months_to_fetch = 6
+            current_date = datetime.now()
+
+            for month_offset in range(months_to_fetch):
+                target_month = current_date.month + month_offset
+                target_year = current_date.year
+
+                while target_month > 12:
+                    target_month -= 12
+                    target_year += 1
+
+                print(f"  Consultando {target_year}-{target_month:02d}...")
+
+                # Usar XMLHttpRequest con los headers exactos que usa el sitio
+                ajax_result = driver.execute_script(f"""
+                    return new Promise((resolve) => {{
+                        try {{
+                            var xhr = new XMLHttpRequest();
+                            xhr.open('POST', 'https://ticketing.colosseo.it/mtajax/calendars_month', true);
+                            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+                            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                            xhr.setRequestHeader('Accept', 'application/json, text/javascript, */*; q=0.01');
+                            xhr.withCredentials = true;
+
+                            xhr.onload = function() {{
+                                try {{
+                                    var data = JSON.parse(xhr.responseText);
+
+                                    // Buscar timeslots en diferentes ubicaciones de la respuesta
+                                    var timeslots = null;
+                                    if (data && data.timeslots) {{
+                                        timeslots = data.timeslots;
+                                    }} else if (data && data.data) {{
+                                        if (Array.isArray(data.data)) {{
+                                            timeslots = data.data;
+                                        }} else if (data.data && data.data.timeslots) {{
+                                            timeslots = data.data.timeslots;
+                                        }}
+                                    }}
+
+                                    if (timeslots && timeslots.length > 0) {{
+                                        resolve({{
+                                            success: true,
+                                            timeslots: timeslots,
+                                            count: timeslots.length
+                                        }});
+                                    }} else if (data && data.message) {{
+                                        resolve({{success: false, error: data.message, raw: JSON.stringify(data).substring(0, 200)}});
+                                    }} else {{
+                                        resolve({{success: false, error: 'No timeslots', keys: Object.keys(data || {{}}), raw: JSON.stringify(data).substring(0, 200)}});
+                                    }}
+                                }} catch(e) {{
+                                    resolve({{success: false, error: 'Parse: ' + e.message, raw: xhr.responseText.substring(0, 200)}});
+                                }}
+                            }};
+
+                            xhr.onerror = function() {{
+                                resolve({{success: false, error: 'Network error'}});
+                            }};
+
+                            var params = 'action=mtajax_calendars_month' +
+                                         '&guids%5BentranceEvent_guid%5D%5B%5D={tour_info["guid"]}' +
+                                         '&singleDaySession=false' +
+                                         '&month={target_month}' +
+                                         '&year={target_year}';
+
+                            xhr.send(params);
+                        }} catch(e) {{
+                            resolve({{success: false, error: 'Exception: ' + e.message}});
+                        }}
+                    }});
+                """)
+
+                if ajax_result and ajax_result.get('success'):
+                    timeslots = ajax_result.get('timeslots', [])
+                    tour_data['timeslots'].extend(timeslots)
+                    print(f"    +{ajax_result.get('count', 0)} timeslots")
+                else:
+                    error = ajax_result.get('error', 'unknown') if ajax_result else 'null'
+                    raw = ajax_result.get('raw', '') if ajax_result else ''
+                    print(f"    Error: {str(error)[:50]}")
+                    if raw:
+                        print(f"    Raw: {raw[:100]}")
+
+                time.sleep(0.5)  # Pequeña pausa entre requests
 
         except Exception as e:
             print(f"  Error: {str(e)[:50]}")
