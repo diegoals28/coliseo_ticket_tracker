@@ -1212,6 +1212,116 @@ def upload_historico_base():
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
 
+@app.route('/api/railway/trigger', methods=['POST'])
+def trigger_railway_job():
+    """
+    Triggea el job de Railway para actualizar cookies y disponibilidad.
+    Usa la API GraphQL de Railway con deploymentRedeploy.
+
+    Requiere variables de entorno:
+    - RAILWAY_API_TOKEN: Token de API de Railway
+    - RAILWAY_SERVICE_ID: ID del servicio cookie-fetcher
+    """
+    import requests
+
+    railway_token = os.environ.get('RAILWAY_API_TOKEN', '')
+    service_id = os.environ.get('RAILWAY_SERVICE_ID', '')
+
+    if not railway_token or not service_id:
+        return jsonify({
+            "error": "Railway no configurado",
+            "hint": "Configura RAILWAY_API_TOKEN y RAILWAY_SERVICE_ID"
+        }), 400
+
+    try:
+        # Primero obtener el último deployment del servicio
+        query_deployments = """
+        query getDeployments($serviceId: String!) {
+            deployments(first: 1, input: { serviceId: $serviceId }) {
+                edges {
+                    node {
+                        id
+                        status
+                    }
+                }
+            }
+        }
+        """
+
+        response = requests.post(
+            "https://backboard.railway.app/graphql/v2",
+            headers={
+                "Authorization": f"Bearer {railway_token}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "query": query_deployments,
+                "variables": {"serviceId": service_id}
+            },
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return jsonify({"error": f"Railway API error: {response.status_code}"}), 500
+
+        data = response.json()
+
+        if 'errors' in data:
+            return jsonify({"error": data['errors'][0].get('message', 'Unknown error')}), 500
+
+        edges = data.get('data', {}).get('deployments', {}).get('edges', [])
+        if not edges:
+            return jsonify({"error": "No se encontraron deployments"}), 404
+
+        deployment_id = edges[0]['node']['id']
+
+        # Ahora hacer redeploy
+        mutation_redeploy = """
+        mutation redeployDeployment($id: String!) {
+            deploymentRedeploy(id: $id) {
+                id
+                status
+            }
+        }
+        """
+
+        response = requests.post(
+            "https://backboard.railway.app/graphql/v2",
+            headers={
+                "Authorization": f"Bearer {railway_token}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "query": mutation_redeploy,
+                "variables": {"id": deployment_id}
+            },
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return jsonify({"error": f"Railway redeploy error: {response.status_code}"}), 500
+
+        data = response.json()
+
+        if 'errors' in data:
+            return jsonify({"error": data['errors'][0].get('message', 'Unknown error')}), 500
+
+        new_deployment = data.get('data', {}).get('deploymentRedeploy', {})
+
+        return jsonify({
+            "success": True,
+            "message": "Job de Railway iniciado",
+            "deployment_id": new_deployment.get('id', ''),
+            "status": new_deployment.get('status', ''),
+            "hint": "Los datos se actualizarán en 2-3 minutos"
+        })
+
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Timeout conectando con Railway"}), 504
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
 @app.route('/api/debug/proxy', methods=['GET'])
 def debug_proxy():
     """

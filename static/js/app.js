@@ -243,20 +243,55 @@ async function cargarCookiesAutomaticas() {
     }
 }
 
-// Refrescar datos (recargar cache desde Supabase - NO llama a la API del Colosseo)
+// Refrescar datos - Triggea Railway para obtener datos frescos
 async function refrescarCookies() {
-    document.getElementById('refreshBtn').disabled = true;
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
 
-    // Solo recargar datos cacheados de Supabase (actualizados por Railway)
-    const loaded = await cargarDisponibilidadCacheada();
+    try {
+        // Triggear Railway para obtener datos frescos
+        actualizarEstadoCookies('loading', 'Iniciando actualización...', 'Conectando con Railway');
 
-    if (loaded) {
-        showAlert('success', 'Datos actualizados desde cache');
-    } else {
-        showAlert('error', 'No hay datos en cache. Railway actualiza cada 6 horas.');
+        const response = await fetch('/api/railway/trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            showAlert('success', 'Actualización iniciada. Los datos estarán listos en 2-3 minutos.');
+            actualizarEstadoCookies('loading',
+                'Railway ejecutándose...',
+                'Los datos se actualizarán automáticamente. Recarga la página en 2-3 minutos.'
+            );
+
+            // Programar recarga automática en 3 minutos
+            setTimeout(async () => {
+                await cargarDisponibilidadCacheada();
+                showAlert('success', 'Datos actualizados');
+            }, 180000);
+
+        } else {
+            // Si Railway no está configurado, solo recargar desde cache
+            const loaded = await cargarDisponibilidadCacheada();
+            if (loaded) {
+                showAlert('success', 'Datos cargados desde cache');
+            } else {
+                showAlert('error', data.error || 'No se pudo actualizar');
+            }
+        }
+
+    } catch (error) {
+        console.error('[Refresh] Error:', error);
+        // Fallback: recargar desde cache
+        await cargarDisponibilidadCacheada();
+        showAlert('error', 'Error conectando. Datos cargados desde cache.');
     }
 
-    document.getElementById('refreshBtn').disabled = false;
+    btn.disabled = false;
+    btn.innerHTML = `${ICONS.refresh} Actualizar Datos`;
 }
 
 // Mostrar alertas
