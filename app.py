@@ -10,38 +10,42 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, render_template, request, jsonify, send_file
 
 
-def utc_to_rome(utc_datetime_str):
+def utc_to_rome(datetime_str):
     """
-    Convierte un datetime string UTC a hora de Roma (Europe/Rome).
+    Convierte un datetime string UTC a hora de Roma.
     Roma usa CET (UTC+1) en invierno y CEST (UTC+2) en verano.
     """
-    if not utc_datetime_str:
+    if not datetime_str:
         return '', ''
 
     try:
-        # Parse the UTC datetime
-        if utc_datetime_str.endswith('Z'):
-            utc_datetime_str = utc_datetime_str[:-1]
+        # Quitar Z si existe
+        clean_str = datetime_str.replace('Z', '')
 
-        dt_utc = datetime.fromisoformat(utc_datetime_str).replace(tzinfo=timezone.utc)
+        # Parse datetime
+        dt = datetime.fromisoformat(clean_str)
 
-        # Determinar si es horario de verano (aproximado)
-        # Horario de verano en Europa: último domingo de marzo a último domingo de octubre
-        month = dt_utc.month
-        if 4 <= month <= 10:  # Abril a Octubre (aproximado)
-            offset = timedelta(hours=2)  # CEST
+        # Determinar offset según el mes (aproximado)
+        # Horario de verano: último domingo marzo a último domingo octubre
+        month = dt.month
+        if 4 <= month <= 10:
+            offset_hours = 2  # CEST (verano)
         else:
-            offset = timedelta(hours=1)  # CET
+            offset_hours = 1  # CET (invierno)
 
-        dt_rome = dt_utc + offset
+        # Sumar offset
+        dt_rome = dt + timedelta(hours=offset_hours)
 
         fecha = dt_rome.strftime('%Y-%m-%d')
         hora = dt_rome.strftime('%H:%M')
 
         return fecha, hora
-    except Exception:
-        # Fallback: extraer directamente
-        return utc_datetime_str[:10], utc_datetime_str[11:16]
+    except Exception as e:
+        # Fallback: extraer directamente sin conversión
+        try:
+            return datetime_str[:10], datetime_str[11:16]
+        except:
+            return '', ''
 import pandas as pd
 from io import BytesIO
 
