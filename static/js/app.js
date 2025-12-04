@@ -243,10 +243,19 @@ async function cargarCookiesAutomaticas() {
     }
 }
 
-// Refrescar cookies (recargar desde Supabase)
+// Refrescar datos (recargar cache desde Supabase - NO llama a la API del Colosseo)
 async function refrescarCookies() {
     document.getElementById('refreshBtn').disabled = true;
-    await cargarCookiesAutomaticas();
+
+    // Solo recargar datos cacheados de Supabase (actualizados por Railway)
+    const loaded = await cargarDisponibilidadCacheada();
+
+    if (loaded) {
+        showAlert('success', 'Datos actualizados desde cache');
+    } else {
+        showAlert('error', 'No hay datos en cache. Railway actualiza cada 6 horas.');
+    }
+
     document.getElementById('refreshBtn').disabled = false;
 }
 
