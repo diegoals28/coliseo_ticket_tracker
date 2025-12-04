@@ -26,52 +26,85 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 TOUR_URL = "https://ticketing.colosseo.it/en/eventi/24h-colosseo-foro-romano-palatino-gruppi/"
 
-# Proxy residencial (Webshare)
-# Formato: PROXY_HOST, PROXY_PORT, PROXY_USER, PROXY_PASS
+# Webshare API Key para obtener proxies automáticamente
+WEBSHARE_API_KEY = os.environ.get('WEBSHARE_API_KEY', '')
+
+# Fallback: Proxy manual si no hay API key
 PROXY_HOST = os.environ.get('PROXY_HOST', '')
 PROXY_PORT = os.environ.get('PROXY_PORT', '')
 PROXY_USER = os.environ.get('PROXY_USER', '')
 PROXY_PASS = os.environ.get('PROXY_PASS', '')
 
-# Lista de proxies adicionales (formato: host:port:user:pass, separados por coma)
-# Ejemplo: PROXY_LIST="host1:port1:user1:pass1,host2:port2:user2:pass2"
-PROXY_LIST_STR = os.environ.get('PROXY_LIST', '')
+def fetch_webshare_proxies():
+    """Obtiene lista de proxies desde la API de Webshare"""
+    import requests
+
+    if not WEBSHARE_API_KEY:
+        print("[Webshare] No hay API key configurada")
+        return []
+
+    try:
+        print("[Webshare] Obteniendo lista de proxies...")
+        response = requests.get(
+            "https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=100",
+            headers={"Authorization": f"Token {WEBSHARE_API_KEY}"},
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            print(f"[Webshare] Error API: {response.status_code} - {response.text[:200]}")
+            return []
+
+        data = response.json()
+        proxies = []
+
+        for proxy in data.get('results', []):
+            if proxy.get('valid', False):
+                proxies.append({
+                    'host': proxy['proxy_address'],
+                    'port': str(proxy['port']),
+                    'user': proxy['username'],
+                    'pass': proxy['password'],
+                    'country': proxy.get('country_code', 'XX')
+                })
+
+        print(f"[Webshare] {len(proxies)} proxies válidos obtenidos")
+        return proxies
+
+    except Exception as e:
+        print(f"[Webshare] Error obteniendo proxies: {e}")
+        return []
 
 def parse_proxy_list():
-    """Parsea la lista de proxies desde la variable de entorno"""
+    """Obtiene lista de proxies: primero de Webshare API, luego fallback manual"""
     proxies = []
 
-    # Agregar proxy principal si existe
-    if PROXY_HOST and PROXY_PORT:
+    # Intentar obtener de Webshare API
+    if WEBSHARE_API_KEY:
+        proxies = fetch_webshare_proxies()
+
+    # Fallback: usar proxy manual si no hay proxies de API
+    if not proxies and PROXY_HOST and PROXY_PORT:
+        print("[Proxy] Usando proxy manual como fallback")
         proxies.append({
             'host': PROXY_HOST,
             'port': PROXY_PORT,
             'user': PROXY_USER,
-            'pass': PROXY_PASS
+            'pass': PROXY_PASS,
+            'country': 'manual'
         })
-
-    # Agregar proxies adicionales de PROXY_LIST
-    if PROXY_LIST_STR:
-        for proxy_str in PROXY_LIST_STR.split(','):
-            proxy_str = proxy_str.strip()
-            if not proxy_str:
-                continue
-
-            parts = proxy_str.split(':')
-            if len(parts) >= 2:
-                proxy = {
-                    'host': parts[0],
-                    'port': parts[1],
-                    'user': parts[2] if len(parts) > 2 else '',
-                    'pass': parts[3] if len(parts) > 3 else ''
-                }
-                proxies.append(proxy)
 
     return proxies
 
-# Lista global de proxies
-PROXIES = parse_proxy_list()
+# Lista global de proxies (se carga al inicio)
+PROXIES = []
 current_proxy_index = 0
+
+def initialize_proxies():
+    """Inicializa la lista de proxies (llamar al inicio de main)"""
+    global PROXIES
+    PROXIES = parse_proxy_list()
+    return PROXIES
 
 
 def create_proxy_extension(proxy_host, proxy_port, proxy_user, proxy_pass):
@@ -158,7 +191,8 @@ def rotate_proxy():
 
     current_proxy_index = (current_proxy_index + 1) % len(PROXIES)
     proxy = PROXIES[current_proxy_index]
-    print(f"[Proxy] Rotando a proxy {current_proxy_index + 1}/{len(PROXIES)}: {proxy['host']}:{proxy['port']}")
+    country = proxy.get('country', 'XX')
+    print(f"[Proxy] Rotando a proxy {current_proxy_index + 1}/{len(PROXIES)}: {proxy['host']}:{proxy['port']} ({country})")
     return proxy
 
 
@@ -1732,10 +1766,14 @@ def main():
     print(f"Timestamp: {datetime.now().isoformat()}")
     print("=" * 60)
 
+    # Inicializar proxies desde Webshare API
+    initialize_proxies()
+
     # Mostrar proxies disponibles
     print(f"\n[Proxy] {len(PROXIES)} proxies configurados")
     for i, p in enumerate(PROXIES):
-        print(f"  {i+1}. {p['host']}:{p['port']}")
+        country = p.get('country', 'XX')
+        print(f"  {i+1}. {p['host']}:{p['port']} ({country})")
     sys.stdout.flush()
 
     # Iniciar display virtual
