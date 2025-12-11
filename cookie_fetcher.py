@@ -1543,7 +1543,10 @@ def update_historico_excel(supabase, availability_data):
 
     bucket = 'colosseo-files'
     path = 'historico/historico_disponibilidad.xlsx'
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # Convertir timestamp a hora de Roma
+    from zoneinfo import ZoneInfo
+    rome_now = datetime.now(ZoneInfo('Europe/Rome'))
+    timestamp = rome_now.strftime("%Y-%m-%d %H:%M")
 
     print(f"\n[Historico] Actualizando historico Excel...")
 
@@ -1576,13 +1579,9 @@ def update_historico_excel(supabase, availability_data):
                     continue
 
                 # Parsear fecha y hora (formato: 2025-12-04T09:00:00Z)
-                # Convertir de UTC a hora de Roma (UTC+1 en invierno, UTC+2 en verano)
                 try:
-                    from zoneinfo import ZoneInfo
-                    utc_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
-                    rome_dt = utc_dt.astimezone(ZoneInfo('Europe/Rome'))
-                    fecha = rome_dt.strftime('%Y-%m-%d')
-                    hora = rome_dt.strftime('%H:%M')
+                    fecha = start[:10]  # 2025-12-04
+                    hora = start[11:16]  # 09:00
                     capacidad = ts.get('capacity', 0)
                     capacidad_original = ts.get('originalCapacity', capacidad)
 
