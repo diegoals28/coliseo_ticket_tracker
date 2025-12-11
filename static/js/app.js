@@ -31,7 +31,11 @@ async function cargarDisponibilidadCacheada() {
     actualizarEstadoCookies('loading', 'Loading data...', 'Searching availability in cache');
 
     try {
-        const response = await fetch('/api/availability/cached');
+        // Add cache-busting parameter to force fresh data
+        const cacheBuster = Date.now();
+        const response = await fetch(`/api/availability/cached?_=${cacheBuster}`, {
+            cache: 'no-store'
+        });
         const data = await response.json();
 
         if (response.ok && data.resultados && Object.keys(data.resultados).length > 0) {

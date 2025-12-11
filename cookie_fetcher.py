@@ -1576,9 +1576,13 @@ def update_historico_excel(supabase, availability_data):
                     continue
 
                 # Parsear fecha y hora (formato: 2025-12-04T09:00:00Z)
+                # Convertir de UTC a hora de Roma (UTC+1 en invierno, UTC+2 en verano)
                 try:
-                    fecha = start[:10]  # 2025-12-04
-                    hora = start[11:16]  # 09:00
+                    from zoneinfo import ZoneInfo
+                    utc_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                    rome_dt = utc_dt.astimezone(ZoneInfo('Europe/Rome'))
+                    fecha = rome_dt.strftime('%Y-%m-%d')
+                    hora = rome_dt.strftime('%H:%M')
                     capacidad = ts.get('capacity', 0)
                     capacidad_original = ts.get('originalCapacity', capacidad)
 
