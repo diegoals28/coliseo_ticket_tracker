@@ -52,6 +52,16 @@ import storage_client
 
 app = Flask(__name__)
 
+
+# Permitir embeber en iframes
+@app.after_request
+def add_header(response):
+    # Permitir iframes desde cualquier origen
+    response.headers['X-Frame-Options'] = 'ALLOWALL'
+    response.headers['Content-Security-Policy'] = "frame-ancestors *"
+    return response
+
+
 # Instancia global del proxy manager para la app
 proxy_manager = ProxyManager(
     proxy_file=config.PROXY_FILE,
