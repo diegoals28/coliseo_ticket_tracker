@@ -905,14 +905,18 @@ def descargar_historico():
 
     Query params:
         - include_past: 'true' o 'false' (default: 'true') - incluir fechas pasadas
+        - fix_timezone: 'true' o 'false' (default: 'true') - corregir horarios UTC a CET
 
     Returns:
         Archivo Excel directamente
     """
-    from openpyxl import load_workbook
+    from openpyxl import load_workbook, Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from copy import copy
 
     try:
         include_past = request.args.get('include_past', 'true').lower() == 'true'
+        fix_timezone = request.args.get('fix_timezone', 'true').lower() == 'true'
 
         # Obtener el archivo
         if storage_client.is_configured():
@@ -926,23 +930,40 @@ def descargar_historico():
                 return jsonify({"error": "Archivo no encontrado"}), 404
             wb = load_workbook(filename)
 
-        # Si no queremos fechas pasadas, filtrarlas
-        if not include_past:
-            today = datetime.now().strftime('%Y-%m-%d')
+        today = datetime.now().strftime('%Y-%m-%d')
 
-            for sheet_name in wb.sheetnames:
-                ws = wb[sheet_name]
+        # Procesar cada hoja
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+
+            # Corregir timezone en columna B (hora) si está habilitado
+            if fix_timezone:
+                for row in range(2, ws.max_row + 1):
+                    hora_cell = ws[f'B{row}']
+                    if hora_cell.value:
+                        hora_str = str(hora_cell.value)
+                        # Convertir HH:MM sumando 1 hora (UTC -> CET)
+                        try:
+                            parts = hora_str.split(':')
+                            if len(parts) >= 2:
+                                hour = int(parts[0])
+                                minute = parts[1]
+                                new_hour = (hour + 1) % 24
+                                hora_cell.value = f'{new_hour:02d}:{minute}'
+                        except:
+                            pass
+
+            # Filtrar fechas pasadas creando lista de filas a mantener
+            if not include_past:
                 rows_to_delete = []
-
-                # Identificar filas con fechas pasadas (columna A tiene la fecha)
                 for row in range(2, ws.max_row + 1):
                     fecha_cell = ws[f'A{row}'].value
                     if fecha_cell:
-                        fecha_str = str(fecha_cell)[:10]  # Tomar solo YYYY-MM-DD
+                        fecha_str = str(fecha_cell)[:10]
                         if fecha_str < today:
                             rows_to_delete.append(row)
 
-                # Eliminar filas de abajo hacia arriba para no afectar índices
+                # Eliminar de abajo hacia arriba
                 for row in reversed(rows_to_delete):
                     ws.delete_rows(row)
 
