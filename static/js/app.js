@@ -616,10 +616,18 @@ function cambiarTab(tourId, tabName, event) {
 
 // Download history from Supabase
 async function descargarHistorico() {
+    // Ask user if they want to include past dates
+    const includePast = confirm(
+        'Do you want to include past dates in the download?\n\n' +
+        'Click OK to include all dates (past and future)\n' +
+        'Click Cancel to download only future dates'
+    );
+
     try {
         showAlert('success', 'Downloading history...');
 
-        const response = await fetch('/api/descargar-historico');
+        const url = `/api/descargar-historico?include_past=${includePast}`;
+        const response = await fetch(url);
 
         if (!response.ok) {
             const error = await response.json();
@@ -627,13 +635,14 @@ async function descargarHistorico() {
         }
 
         const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
+        const blobUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `availability_history_${new Date().toISOString().split('T')[0]}.xlsx`;
+        a.href = blobUrl;
+        const suffix = includePast ? '' : '_future_only';
+        a.download = `availability_history${suffix}_${new Date().toISOString().split('T')[0]}.xlsx`;
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(url);
+        window.URL.revokeObjectURL(blobUrl);
         document.body.removeChild(a);
 
         showAlert('success', 'History downloaded successfully');

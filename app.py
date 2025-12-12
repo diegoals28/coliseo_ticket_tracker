@@ -132,17 +132,11 @@ def obtener_timeslots_detallados(client, tour_guid, meses_a_consultar):
                     original_capacity = timeslot.get('originalCapacity', 0)
 
                     if start_time:
-                        # Parsear fecha y hora
+                        # Parsear fecha y hora usando utc_to_rome para manejar CET/CEST
                         try:
-                            if 'T' in start_time:
-                                fecha_hora = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                                # Convertir de UTC a hora italiana (CET/CEST = UTC+1)
-                                fecha_hora = fecha_hora + timedelta(hours=1)
-                                fecha = fecha_hora.strftime('%Y-%m-%d')
-                                hora = fecha_hora.strftime('%H:%M')
-                            else:
-                                fecha = start_time
-                                hora = "N/A"
+                            fecha, hora = utc_to_rome(start_time)
+                            if not fecha:
+                                continue
 
                             ocupadas = original_capacity - capacity if original_capacity else 0
                             porcentaje_ocupado = (ocupadas / original_capacity * 100) if original_capacity > 0 else 0
@@ -918,34 +912,64 @@ def descargar_historico():
     """
     Descarga el archivo histórico desde Supabase o local.
 
+    Query params:
+        - include_past: 'true' o 'false' (default: 'true') - incluir fechas pasadas
+
     Returns:
         Archivo Excel directamente
     """
+    from openpyxl import load_workbook
+
     try:
+        include_past = request.args.get('include_past', 'true').lower() == 'true'
+
+        # Obtener el archivo
         if storage_client.is_configured():
-            # Descargar archivo desde Supabase
             result = storage_client.download_file('historico/historico_disponibilidad.xlsx')
-            if result['success']:
-                return send_file(
-                    BytesIO(result['data']),
-                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    as_attachment=True,
-                    download_name='historico_disponibilidad.xlsx'
-                )
-            else:
+            if not result['success']:
                 return jsonify({"error": "Archivo no encontrado en la nube"}), 404
+            wb = load_workbook(BytesIO(result['data']))
         else:
-            # Descargar archivo local
             filename = 'historico_disponibilidad.xlsx'
-            if os.path.exists(filename):
-                return send_file(
-                    filename,
-                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    as_attachment=True,
-                    download_name=filename
-                )
-            else:
+            if not os.path.exists(filename):
                 return jsonify({"error": "Archivo no encontrado"}), 404
+            wb = load_workbook(filename)
+
+        # Si no queremos fechas pasadas, filtrarlas
+        if not include_past:
+            today = datetime.now().strftime('%Y-%m-%d')
+
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                rows_to_delete = []
+
+                # Identificar filas con fechas pasadas (columna A tiene la fecha)
+                for row in range(2, ws.max_row + 1):
+                    fecha_cell = ws[f'A{row}'].value
+                    if fecha_cell:
+                        fecha_str = str(fecha_cell)[:10]  # Tomar solo YYYY-MM-DD
+                        if fecha_str < today:
+                            rows_to_delete.append(row)
+
+                # Eliminar filas de abajo hacia arriba para no afectar índices
+                for row in reversed(rows_to_delete):
+                    ws.delete_rows(row)
+
+        # Guardar en memoria y enviar
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        # Nombre del archivo según filtro
+        suffix = '' if include_past else '_future_only'
+        download_name = f'historico_disponibilidad{suffix}.xlsx'
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=download_name
+        )
 
     except Exception as e:
         return jsonify({"error": f"Error: {str(e)}"}), 500
