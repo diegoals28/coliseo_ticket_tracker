@@ -12,9 +12,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 
 def utc_to_rome(datetime_str):
     """
-    Extrae fecha y hora de un datetime string.
-    Los datos de la API del Coliseo ya vienen en hora italiana,
-    no requieren conversión de timezone.
+    Convierte un datetime string UTC a hora de Roma (CET = UTC+1).
     """
     if not datetime_str:
         return '', ''
@@ -26,9 +24,11 @@ def utc_to_rome(datetime_str):
         # Parse datetime
         dt = datetime.fromisoformat(clean_str)
 
-        # Los datos ya están en hora italiana, no convertir
-        fecha = dt.strftime('%Y-%m-%d')
-        hora = dt.strftime('%H:%M')
+        # Convertir UTC a CET (UTC+1)
+        dt_rome = dt + timedelta(hours=1)
+
+        fecha = dt_rome.strftime('%Y-%m-%d')
+        hora = dt_rome.strftime('%H:%M')
 
         return fecha, hora
     except Exception as e:
