@@ -57,7 +57,8 @@ app = Flask(__name__)
 @app.after_request
 def add_header(response):
     # Permitir iframes desde cualquier origen
-    response.headers['X-Frame-Options'] = 'ALLOWALL'
+    # No enviar X-Frame-Options para permitir embedding
+    response.headers.pop('X-Frame-Options', None)
     response.headers['Content-Security-Policy'] = "frame-ancestors *"
     return response
 
