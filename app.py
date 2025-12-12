@@ -56,10 +56,9 @@ app = Flask(__name__)
 # Permitir embeber en iframes
 @app.after_request
 def add_header(response):
-    # Permitir iframes desde cualquier origen
-    # No enviar X-Frame-Options para permitir embedding
+    # Permitir iframes desde dominios específicos
     response.headers.pop('X-Frame-Options', None)
-    response.headers['Content-Security-Policy'] = "frame-ancestors *"
+    response.headers['Content-Security-Policy'] = "frame-ancestors 'self' https://tourmageddon.it https://*.tourmageddon.it https://*.vercel.app http://localhost:*"
     return response
 
 
