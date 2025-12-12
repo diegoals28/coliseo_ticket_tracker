@@ -615,14 +615,7 @@ function cambiarTab(tourId, tabName, event) {
 }
 
 // Download history from Supabase
-async function descargarHistorico() {
-    // Ask user if they want to include past dates
-    const includePast = confirm(
-        'Do you want to include past dates in the download?\n\n' +
-        'Click OK to include all dates (past and future)\n' +
-        'Click Cancel to download only future dates'
-    );
-
+async function descargarHistorico(includePast = true) {
     try {
         showAlert('success', 'Downloading history...');
 
