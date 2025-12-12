@@ -1,5 +1,6 @@
 """
 Aplicación web Flask para monitorear disponibilidad del Colosseo
+Version: 2.0 - Tourmageddon Design
 """
 
 import sys
