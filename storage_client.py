@@ -6,7 +6,11 @@ Maneja la subida y descarga de archivos Excel e históricos.
 import os
 from io import BytesIO
 from datetime import datetime
+from dotenv import load_dotenv
 from supabase import create_client, Client
+
+# Cargar variables de entorno desde .env
+load_dotenv()
 
 # Configuración de Supabase desde variables de entorno
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
@@ -183,10 +187,13 @@ def get_auto_cookies() -> dict:
             }
 
         except Exception as e:
-            return {'success': False, 'error': f'Archivo no encontrado: {str(e)}'}
+            error_msg = str(e)
+            if 'not found' in error_msg.lower() or '404' in error_msg:
+                return {'success': False, 'error': 'Cookies no encontradas en Supabase. Ejecuta el job de Railway para generarlas.'}
+            return {'success': False, 'error': f'Error descargando cookies de Supabase: {error_msg}'}
 
     except Exception as e:
-        return {'success': False, 'error': f'Error obteniendo cookies: {str(e)}'}
+        return {'success': False, 'error': f'Error conectando con Supabase: {str(e)}'}
 
 
 def get_cached_availability() -> dict:
