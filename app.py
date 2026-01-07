@@ -662,6 +662,12 @@ def guardar_cookies():
             "message": f"Cookies guardadas correctamente ({len(cookies)} cookies)"
         })
 
+    except PermissionError as e:
+        return jsonify({"error": f"No se puede guardar: el archivo cookies está abierto en otro programa."}), 423
+    except OSError as e:
+        if e.errno == 16:
+            return jsonify({"error": f"Archivo ocupado: cierra el programa que tenga abierto cookies_colosseo.json"}), 423
+        return jsonify({"error": f"Error de sistema: {str(e)}"}), 500
     except Exception as e:
         return jsonify({"error": f"Error al guardar: {str(e)}"}), 500
 
@@ -905,6 +911,12 @@ def guardar_historico():
                 "timestamp": timestamp
             })
 
+    except PermissionError as e:
+        return jsonify({"error": f"No se puede guardar: el archivo está abierto en otro programa. Ciérralo e intenta de nuevo."}), 423
+    except OSError as e:
+        if e.errno == 16:  # Device or resource busy
+            return jsonify({"error": f"Archivo ocupado: cierra Excel u otro programa que tenga abierto el archivo histórico."}), 423
+        return jsonify({"error": f"Error de sistema: {str(e)}"}), 500
     except Exception as e:
         return jsonify({"error": f"Error al guardar historico: {str(e)}"}), 500
 
